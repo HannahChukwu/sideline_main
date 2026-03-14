@@ -13,7 +13,7 @@ interface NavbarProps {
 
 const designerLinks = [
   { href: "/designer", label: "Dashboard" },
-  { href: "/designer/create", label: "Create Asset" },
+  { href: "/designer/create", label: "Generator" },
 ];
 
 const athleteLinks = [{ href: "/athlete", label: "My Feed" }];

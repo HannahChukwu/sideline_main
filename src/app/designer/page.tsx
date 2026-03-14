@@ -37,7 +37,7 @@ export default function DesignerDashboard() {
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-all glow-orange-sm hover:glow-orange"
           >
             <Plus className="w-4 h-4" />
-            New Asset
+            Generate Poster
           </Link>
         </div>
 
