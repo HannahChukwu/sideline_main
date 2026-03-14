@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3.11 \"/Users/hannahchukwu/Library/Application Support/Claude/local-agent-mode-sessions/skills-plugin/ede1e186-530f-4cc6-82a1-df9212d62144/68ddc27e-d5b8-44fe-befb-67a2d3516272/skills/docx/scripts/office/validate.py\" /Users/hannahchukwu/Desktop/sideline/Sideline_Documentation.docx)",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}

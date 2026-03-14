@@ -19,7 +19,7 @@ function isConfigured() {
   return url.startsWith("http") && key.length > 10;
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // If Supabase is not yet configured, let everything through
   if (!isConfigured()) {
     return NextResponse.next({ request });
