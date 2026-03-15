@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Zap, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { Logo } from "@/components/brand/logo";
 
 interface NavbarProps {
   role?: "designer" | "athlete" | "fan";
@@ -44,13 +45,8 @@ export function Navbar({ role, userEmail }: NavbarProps) {
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-border/50">
       <div className="glass px-6 py-4 flex items-center justify-between">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 group">
-          <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center glow-purple-sm transition-all group-hover:scale-105">
-            <Zap className="w-4 h-4 text-primary-foreground fill-primary-foreground" />
-          </div>
-          <span className="font-semibold text-sm tracking-widest uppercase text-foreground/90">
-            Sideline
-          </span>
+        <Link href="/" className="group transition-opacity hover:opacity-80">
+          <Logo size="sm" />
         </Link>
 
         {/* Nav links */}
@@ -60,7 +56,7 @@ export function Navbar({ role, userEmail }: NavbarProps) {
               key={link.href}
               href={link.href}
               className={cn(
-                "px-4 py-1.5 rounded-md text-sm font-medium transition-all",
+                "px-4 py-1.5 rounded-md text-sm font-bold tracking-tight transition-all",
                 pathname === link.href
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:text-foreground hover:bg-white/5"
@@ -98,7 +94,7 @@ export function Navbar({ role, userEmail }: NavbarProps) {
           <button
             onClick={handleSignOut}
             title="Sign out"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Sign out</span>
