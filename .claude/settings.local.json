@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python3.11 \"/Users/hannahchukwu/Library/Application Support/Claude/local-agent-mode-sessions/skills-plugin/ede1e186-530f-4cc6-82a1-df9212d62144/68ddc27e-d5b8-44fe-befb-67a2d3516272/skills/docx/scripts/office/validate.py\" /Users/hannahchukwu/Desktop/sideline/Sideline_Documentation.docx)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(item[''''text''''][:200]\\) for item in data[-20:] if ''''error'''' in item.get\\(''''text'''',''''''''\\).lower\\(\\) or ''''Error'''' in item.get\\(''''text'''',''''''''\\)]\")"
     ]
   }
 }
