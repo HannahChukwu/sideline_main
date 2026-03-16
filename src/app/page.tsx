@@ -58,6 +58,10 @@ export default function Home() {
           <Link href='/auth?mode=login' className='inline-flex items-center gap-2 px-7 py-3 rounded-xl border border-border bg-white/[0.04] text-foreground/80 text-sm font-bold tracking-tight hover:bg-white/[0.07] hover:text-foreground hover:border-primary/30 transition-all duration-200'>
             Sign In
           </Link>
+          <Link href='/manager' className='inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-primary/20 bg-primary/8 text-primary text-sm font-bold tracking-tight hover:bg-primary/12 hover:border-primary/30 transition-all duration-200'>
+            Manager Demo
+            <ArrowRight className='w-4 h-4' />
+          </Link>
         </div>
 
         <div className='w-full max-w-2xl animate-fade-up animate-delay-300'>

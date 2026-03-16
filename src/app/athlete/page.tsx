@@ -50,9 +50,9 @@ export default function AthleteDashboard() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-widest mb-2">Athlete Portal</p>
-              <h1 className="text-3xl font-bold text-foreground mb-1">Your Team's Assets</h1>
+              <h1 className="text-3xl font-bold text-foreground mb-1">Your Team&apos;s Assets</h1>
               <p className="text-sm text-muted-foreground">
-                Review designs from your team's designers. Like what you love.
+                Review designs from your team&apos;s designers. Like what you love.
               </p>
             </div>
 

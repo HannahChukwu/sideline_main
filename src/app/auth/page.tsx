@@ -48,6 +48,7 @@ function AuthForm() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [emailSent, setEmailSent] = useState(false);
 
@@ -57,6 +58,35 @@ function AuthForm() {
     const t = setTimeout(() => setVisible(true), 60);
     return () => clearTimeout(t);
   }, []);
+
+  async function handleGoogleSignIn() {
+    setError(null);
+    setGoogleLoading(true);
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+    if (!supabaseUrl.startsWith("http") || supabaseKey.length < 10) {
+      setError(
+        "Supabase is not configured. Add your project URL and anon key to .env.local to enable auth."
+      );
+      setGoogleLoading(false);
+      return;
+    }
+
+    const supabase = createClient();
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+
+    if (oauthError) {
+      setError(oauthError.message);
+      setGoogleLoading(false);
+    }
+    // On success, Supabase redirects away; no further action needed here.
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -178,6 +208,29 @@ function AuthForm() {
         {mode === "signin" ? "Welcome back" : "Create your account"}
       </h1>
       <p className="text-sm text-muted-foreground mb-7">{meta.description}</p>
+
+      {/* Google OAuth */}
+      <button
+        type="button"
+        onClick={handleGoogleSignIn}
+        disabled={loading || googleLoading}
+        className={cn(
+          "w-full py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2",
+          "border border-white/10 bg-white/5 text-foreground hover:bg-white/7 active:scale-[0.98]",
+          "disabled:opacity-50 disabled:cursor-not-allowed"
+        )}
+      >
+        {googleLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+        Continue with Google
+      </button>
+
+      <div className="flex items-center gap-3 my-2">
+        <div className="h-px flex-1 bg-white/10" />
+        <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground/60">
+          Or
+        </span>
+        <div className="h-px flex-1 bg-white/10" />
+      </div>
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
