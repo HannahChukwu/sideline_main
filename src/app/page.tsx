@@ -95,7 +95,7 @@ export default function Home() {
               <span className='text-[11px] font-bold text-violet-400/60 group-hover:text-violet-400 transition-colors'>Enter portal →</span>
             </Link>
 
-            <Link href='/feed' className='sport-border-top group flex flex-col gap-3.5 rounded-xl p-5 border border-white/7 bg-white/[0.025] hover:bg-white/5 hover:border-white/14 transition-all duration-200'>
+            <Link href='/auth?role=student&mode=signup' className='sport-border-top group flex flex-col gap-3.5 rounded-xl p-5 border border-white/7 bg-white/[0.025] hover:bg-white/5 hover:border-white/14 transition-all duration-200'>
               <div className='flex items-start justify-between'>
                 <div className='w-9 h-9 rounded-lg bg-white/6 flex items-center justify-center group-hover:bg-white/10 transition-colors'>
                   <Users className='w-4 h-4 text-foreground/45' />

@@ -7,6 +7,7 @@ import { ArrowRight, CheckCircle2, ChevronLeft, ClipboardCopy, ImagePlus, Sparkl
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { ScheduleImporter } from "@/components/schedule/ScheduleImporter";
@@ -21,6 +22,8 @@ import { createClient } from "@/lib/supabase/client";
 import { getTeamsForManager } from "@/lib/supabase/teams";
 import { getAthletesForTeam } from "@/lib/supabase/athletes";
 import { saveManagerDraft as saveManagerDraftToSupabase } from "@/lib/supabase/managerDraft";
+import { getSchedulesForTeam, replaceTeamScheduleFromImport, updateScheduleScore } from "@/lib/supabase/schedules";
+import { generateImage } from "@/lib/imageGen/provider";
 
 type StepId = "team" | "athletes" | "schedule" | "postType" | "review";
 
@@ -68,6 +71,7 @@ export function PipelineWizard() {
   const router = useRouter();
   const [step, setStep] = useState<StepId>("team");
   const [schedule, setSchedule] = useState<GameEvent[]>([]);
+  const [scheduleMeta, setScheduleMeta] = useState<Record<string, { homeScore: string; awayScore: string; final: boolean }>>({});
 
   const [teams, setTeams] = useState<Team[]>(MOCK_TEAMS);
   const [athletesByTeamId, setAthletesByTeamId] = useState<Record<string, Athlete[]>>({});
@@ -82,6 +86,8 @@ export function PipelineWizard() {
 
   const supabase = useMemo(() => createClient(), []);
   const [signedInUserId, setSignedInUserId] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setSignedInUserId(user?.id ?? null));
@@ -120,6 +126,44 @@ export function PipelineWizard() {
       cancelled = true;
     };
   }, [draft.teamId, supabase]);
+
+  useEffect(() => {
+    if (!draft.teamId) return;
+    const teamId = draft.teamId;
+    let cancelled = false;
+    getSchedulesForTeam(supabase, teamId)
+      .then((rows) => {
+        if (cancelled) return;
+        const events: GameEvent[] = rows.map((r) => ({
+          id: r.id,
+          opponent: r.opponent,
+          dateTime: r.date_time ?? undefined,
+          dateText: r.date_text ?? undefined,
+          timeText: r.time_text ?? undefined,
+          location: r.location ?? undefined,
+          homeAway: (r.home_away as GameEvent["homeAway"]) ?? undefined,
+        }));
+        setSchedule(events);
+        setScheduleMeta((prev) => {
+          const next = { ...prev };
+          for (const r of rows) {
+            next[r.id] = {
+              homeScore: r.home_score === null || r.home_score === undefined ? "" : String(r.home_score),
+              awayScore: r.away_score === null || r.away_score === undefined ? "" : String(r.away_score),
+              final: Boolean(r.final),
+            };
+          }
+          return next;
+        });
+        if (events.length > 0 && !draft.eventId) {
+          setDraft((d) => ({ ...d, eventId: events[0]?.id ?? null }));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.teamId, draft.eventId, supabase]);
 
   const athletesForTeam = useMemo(
     () => (draft.teamId ? athletesByTeamId[draft.teamId] ?? [] : []),
@@ -306,10 +350,33 @@ export function PipelineWizard() {
           {step === "schedule" && (
             <div className="flex flex-col gap-4">
               <ScheduleImporter
-                onImport={(events) => {
-                  const converted = toGameEvents(events);
+                onImport={async (events) => {
+                  if (!draft.teamId) return;
+                  await replaceTeamScheduleFromImport(supabase, draft.teamId, events);
+                  const rows = await getSchedulesForTeam(supabase, draft.teamId);
+                  const converted: GameEvent[] = rows.map((r) => ({
+                    id: r.id,
+                    opponent: r.opponent,
+                    dateTime: r.date_time ?? undefined,
+                    dateText: r.date_text ?? undefined,
+                    timeText: r.time_text ?? undefined,
+                    location: r.location ?? undefined,
+                    homeAway: (r.home_away as GameEvent["homeAway"]) ?? undefined,
+                  }));
                   setSchedule(converted);
                   setDraft((d) => ({ ...d, eventId: converted[0]?.id ?? null }));
+                  setScheduleMeta(
+                    Object.fromEntries(
+                      rows.map((r) => [
+                        r.id,
+                        {
+                          homeScore: r.home_score === null || r.home_score === undefined ? "" : String(r.home_score),
+                          awayScore: r.away_score === null || r.away_score === undefined ? "" : String(r.away_score),
+                          final: Boolean(r.final),
+                        },
+                      ])
+                    )
+                  );
                 }}
               />
 
@@ -337,6 +404,161 @@ export function PipelineWizard() {
                         </option>
                       ))}
                     </select>
+
+                    {draft.eventId && (
+                      <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                        <div className="text-xs font-semibold tracking-widest uppercase text-muted-foreground/70 mb-3">
+                          Final score (optional)
+                        </div>
+                        <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                          <div className="flex flex-col gap-1.5">
+                            <div className="text-[11px] font-semibold text-foreground/60 uppercase tracking-wider">
+                              Home
+                            </div>
+                            <Input
+                              type="number"
+                              value={scheduleMeta[draft.eventId]?.homeScore ?? ""}
+                              onChange={(e) =>
+                                setScheduleMeta((m) => ({
+                                  ...m,
+                                  [draft.eventId!]: {
+                                    homeScore: e.target.value,
+                                    awayScore: m[draft.eventId!]?.awayScore ?? "",
+                                    final: m[draft.eventId!]?.final ?? false,
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            <div className="text-[11px] font-semibold text-foreground/60 uppercase tracking-wider">
+                              Away
+                            </div>
+                            <Input
+                              type="number"
+                              value={scheduleMeta[draft.eventId]?.awayScore ?? ""}
+                              onChange={(e) =>
+                                setScheduleMeta((m) => ({
+                                  ...m,
+                                  [draft.eventId!]: {
+                                    homeScore: m[draft.eventId!]?.homeScore ?? "",
+                                    awayScore: e.target.value,
+                                    final: m[draft.eventId!]?.final ?? false,
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                          <label className="flex items-center gap-2 text-xs font-semibold text-foreground/70 select-none pb-2">
+                            <input
+                              type="checkbox"
+                              checked={scheduleMeta[draft.eventId]?.final ?? false}
+                              onChange={(e) =>
+                                setScheduleMeta((m) => ({
+                                  ...m,
+                                  [draft.eventId!]: {
+                                    homeScore: m[draft.eventId!]?.homeScore ?? "",
+                                    awayScore: m[draft.eventId!]?.awayScore ?? "",
+                                    final: e.target.checked,
+                                  },
+                                }))
+                              }
+                            />
+                            Final
+                          </label>
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-end">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              if (!draft.eventId) return;
+                              const meta = scheduleMeta[draft.eventId];
+                              const home = meta?.homeScore?.trim() ? Number(meta.homeScore) : null;
+                              const away = meta?.awayScore?.trim() ? Number(meta.awayScore) : null;
+                              await updateScheduleScore(supabase, draft.eventId, {
+                                home_score: Number.isFinite(home as number) ? (home as number) : null,
+                                away_score: Number.isFinite(away as number) ? (away as number) : null,
+                                final: Boolean(meta?.final),
+                              });
+                            }}
+                          >
+                            Save score
+                          </Button>
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-between gap-2">
+                          <div className="text-[11px] text-muted-foreground">
+                            Publish a graphic for this game so it appears in feeds.
+                          </div>
+                          <Button
+                            type="button"
+                            disabled={!signedInUserId || publishing}
+                            onClick={async () => {
+                              if (!signedInUserId || !selectedTeam || !selectedEvent || !draft.eventId) return;
+                              setPublishError(null);
+                              setPublishing(true);
+                              try {
+                                const meta = scheduleMeta[draft.eventId];
+                                const isFinal = Boolean(meta?.final);
+                                const home = meta?.homeScore?.trim() ? Number(meta.homeScore) : null;
+                                const away = meta?.awayScore?.trim() ? Number(meta.awayScore) : null;
+
+                                const prompt = [
+                                  `${isFinal ? "final-score" : "gameday"} for ${selectedTeam.sport}`,
+                                  `${selectedTeam.teamName} vs ${selectedEvent.opponent}`,
+                                  selectedEvent.dateText ? `date: ${selectedEvent.dateText}` : "",
+                                  selectedEvent.timeText ? `time: ${selectedEvent.timeText}` : "",
+                                  isFinal && Number.isFinite(home as number) && Number.isFinite(away as number)
+                                    ? `score: ${home}-${away}`
+                                    : "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" | ");
+
+                                const img = await generateImage({ prompt });
+                                const now = new Date().toISOString();
+
+                                const { error: insErr } = await supabase.from("assets").insert({
+                                  designer_id: signedInUserId,
+                                  team_id: selectedTeam.id,
+                                  schedule_id: draft.eventId,
+                                  title: `${selectedTeam.teamName} vs ${selectedEvent.opponent}`,
+                                  type: isFinal ? "final-score" : "gameday",
+                                  status: "published",
+                                  sport: selectedTeam.sport,
+                                  home_team: selectedTeam.teamName,
+                                  away_team: selectedEvent.opponent,
+                                  home_score: Number.isFinite(home as number) ? (home as number) : null,
+                                  away_score: Number.isFinite(away as number) ? (away as number) : null,
+                                  event_date: (selectedEvent.dateText ?? "").slice(0, 10) || new Date().toISOString().slice(0, 10),
+                                  image_url: img.imageUrl,
+                                  created_at: now,
+                                  updated_at: now,
+                                  published_at: now,
+                                });
+                                if (insErr) throw insErr;
+
+                                router.push("/feed");
+                              } catch (e: unknown) {
+                                setPublishError(e instanceof Error ? e.message : "Failed to publish");
+                              } finally {
+                                setPublishing(false);
+                              }
+                            }}
+                          >
+                            {publishing ? "Publishing…" : "Publish to feeds"}
+                          </Button>
+                        </div>
+                        {publishError && (
+                          <div className="mt-3 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">
+                            {publishError}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}

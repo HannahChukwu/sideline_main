@@ -55,17 +55,24 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   const isProtected = PROTECTED.some((r) => pathname.startsWith(r));
+  const searchParams = request.nextUrl.searchParams;
 
   // 1. Unauthenticated user hitting a protected route → send to auth
   if (isProtected && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth";
     url.searchParams.set("role", roleFromPath(pathname));
+    // Preserve where the user was trying to go so callback can redirect back.
+    url.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(url);
   }
 
   // 2. Authenticated user hitting /auth → redirect to their dashboard
-  if (user && pathname === "/auth") {
+  // Allow explicitly requesting the auth UI even if already signed in (account switching).
+  const explicitlyWantsAuthUi =
+    searchParams.has("mode") || searchParams.has("role") || searchParams.has("force");
+
+  if (user && pathname === "/auth" && !explicitlyWantsAuthUi) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
@@ -105,6 +112,8 @@ export async function proxy(request: NextRequest) {
 
   return supabaseResponse;
 }
+
+export default proxy;
 
 export const config = {
   matcher: [

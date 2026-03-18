@@ -59,6 +59,12 @@ function AuthForm() {
     return () => clearTimeout(t);
   }, []);
 
+  useEffect(() => {
+    const m = searchParams.get("mode");
+    if (m === "signup") setMode("signup");
+    if (m === "signin" || m === "login") setMode("signin");
+  }, [searchParams]);
+
   async function handleGoogleSignIn() {
     setError(null);
     setGoogleLoading(true);
@@ -146,9 +152,8 @@ function AuthForm() {
             .eq("id", data.user.id)
             .single();
 
-          const destination = profile?.role
-            ? ROLE_ROUTES[profile.role as Role]
-            : ROLE_ROUTES[role];
+          const roleFromDb = (profile as unknown as { role?: Role | null } | null)?.role ?? null;
+          const destination = roleFromDb ? ROLE_ROUTES[roleFromDb] : ROLE_ROUTES[role];
 
           router.push(destination);
           router.refresh();

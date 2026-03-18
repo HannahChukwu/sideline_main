@@ -4,10 +4,25 @@ import Image from "next/image";
 import { Heart, Eye, MoreHorizontal, Clock, CheckCircle, FileEdit } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { Asset } from "@/lib/mock-data";
+
+export type AssetCardModel = {
+  id: string;
+  title: string;
+  type: "gameday" | "final-score" | "poster" | "highlight";
+  status: "draft" | "published" | "archived";
+  sport: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore?: number;
+  awayScore?: number;
+  eventDate: string;
+  imageUrl: string;
+  likes: number;
+  designerName: string;
+};
 
 interface AssetCardProps {
-  asset: Asset;
+  asset: AssetCardModel;
   variant?: "designer" | "athlete" | "fan";
   liked?: boolean;
   onLike?: (id: string) => void;

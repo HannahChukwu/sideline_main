@@ -1,44 +1,116 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Heart, Trophy, Star } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
-import { AssetCard } from "@/components/designer/asset-card";
-import { MOCK_ASSETS } from "@/lib/mock-data";
+import { AssetCard, type AssetCardModel } from "@/components/designer/asset-card";
+import { createClient } from "@/lib/supabase/client";
+import { getPublishedAssets, likeAsset, unlikeAsset } from "@/lib/supabase/assets";
+import { getTeamsForManager } from "@/lib/supabase/teams";
+import type { Team } from "@/lib/pipeline/types";
 
-const ATHLETE_ID = "athlete-1";
+function toAssetCardModel(row: Awaited<ReturnType<typeof getPublishedAssets>>[number]): AssetCardModel {
+  return {
+    id: row.id,
+    title: row.title,
+    type: row.type,
+    status: row.status,
+    sport: row.sport,
+    homeTeam: row.home_team,
+    awayTeam: row.away_team,
+    homeScore: row.home_score ?? undefined,
+    awayScore: row.away_score ?? undefined,
+    eventDate: row.event_date,
+    imageUrl: row.image_url ?? "https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800&q=80",
+    likes: row.like_count,
+    designerName: row.designer_name ?? "Designer",
+  };
+}
 
 export default function AthleteDashboard() {
-  const [liked, setLiked] = useState<Set<string>>(
-    new Set(MOCK_ASSETS.filter((a) => a.likedByAthletes.includes(ATHLETE_ID)).map((a) => a.id))
-  );
-  const [likeCounts, setLikeCounts] = useState<Record<string, number>>(
-    Object.fromEntries(MOCK_ASSETS.map((a) => [a.id, a.likes]))
-  );
+  const [assets, setAssets] = useState<AssetCardModel[]>([]);
+  const [allRows, setAllRows] = useState<Awaited<ReturnType<typeof getPublishedAssets>>>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamFilter, setTeamFilter] = useState<string>("all");
+  const [liked, setLiked] = useState<Set<string>>(new Set());
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const published = MOCK_ASSETS.filter((a) => a.status === "published");
+  const supabase = useMemo(() => createClient(), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      setLoading(true);
+      setError(null);
+      try {
+        const rows = await getPublishedAssets(supabase, { limit: 120 });
+        if (cancelled) return;
+        setAllRows(rows);
+        setAssets(rows.map(toAssetCardModel));
+        setLiked(new Set(rows.filter((r) => r.liked_by_me).map((r) => r.id)));
+        setLikeCounts(Object.fromEntries(rows.map((r) => [r.id, r.like_count])));
+
+        // MVP “filter by team” support: pull teams visible to this user.
+        // If the user isn't a manager, this may return 0 teams; filter UI will still work as “All”.
+        const teamsList = await getTeamsForManager(supabase);
+        if (cancelled) return;
+        setTeams(teamsList);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : "Failed to load feed");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  useEffect(() => {
+    if (teamFilter === "all") {
+      setAssets(allRows.map(toAssetCardModel));
+      return;
+    }
+    setAssets(allRows.filter((r) => r.team_id === teamFilter).map(toAssetCardModel));
+  }, [allRows, teamFilter]);
 
   function handleLike(id: string) {
     setLiked((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
-        setLikeCounts((c) => ({ ...c, [id]: c[id] - 1 }));
+        setLikeCounts((c) => ({ ...c, [id]: (c[id] ?? 0) - 1 }));
+        unlikeAsset(supabase, id).catch(() => {
+          setLiked((p) => new Set(p).add(id));
+          setLikeCounts((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
+        });
       } else {
         next.add(id);
-        setLikeCounts((c) => ({ ...c, [id]: c[id] + 1 }));
+        setLikeCounts((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
+        likeAsset(supabase, id).catch(() => {
+          setLiked((p) => {
+            const r = new Set(p);
+            r.delete(id);
+            return r;
+          });
+          setLikeCounts((c) => ({ ...c, [id]: Math.max(0, (c[id] ?? 0) - 1) }));
+        });
       }
       return next;
     });
   }
 
-  const assetsWithUpdatedLikes = published.map((a) => ({
+  const assetsWithUpdatedLikes = assets.map((a) => ({
     ...a,
     likes: likeCounts[a.id] ?? a.likes,
   }));
 
   const totalLikesGiven = liked.size;
-  const pendingReview = published.filter((a) => !liked.has(a.id)).length;
+  const pendingReview = assetsWithUpdatedLikes.filter((a) => !liked.has(a.id)).length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -87,12 +159,37 @@ export default function AthleteDashboard() {
               <Trophy className="w-3.5 h-3.5 text-blue-400" />
               <span className="text-xs text-muted-foreground">Total Assets</span>
             </div>
-            <div className="text-2xl font-bold text-foreground">{published.length}</div>
+            <div className="text-2xl font-bold text-foreground">{assetsWithUpdatedLikes.length}</div>
           </div>
         </div>
 
+        {/* Team filter (MVP manual) */}
+        <div className="flex items-center justify-end mb-6">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Team</span>
+            <select
+              value={teamFilter}
+              onChange={(e) => setTeamFilter(e.target.value)}
+              className="h-9 rounded-lg border border-input bg-transparent px-3 text-sm outline-none"
+            >
+              <option value="all">All</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.teamName}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {error && (
+          <div className="mb-8 px-4 py-3 rounded-xl bg-destructive/10 border border-destructive/20 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
         {/* Section: Pending review */}
-        {pendingReview > 0 && (
+        {!loading && pendingReview > 0 && (
           <div className="mb-10">
             <div className="flex items-center gap-3 mb-5">
               <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">Awaiting Your Feedback</h2>
@@ -122,7 +219,7 @@ export default function AthleteDashboard() {
         )}
 
         {/* Section: Liked */}
-        {totalLikesGiven > 0 && (
+        {!loading && totalLikesGiven > 0 && (
           <div>
             <div className="flex items-center gap-3 mb-5">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Liked</h2>
@@ -143,6 +240,12 @@ export default function AthleteDashboard() {
                   />
                 ))}
             </div>
+          </div>
+        )}
+
+        {!loading && assetsWithUpdatedLikes.length === 0 && !error && (
+          <div className="py-24 text-center text-muted-foreground">
+            No published assets yet.
           </div>
         )}
       </main>

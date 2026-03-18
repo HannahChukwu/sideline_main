@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowLeft, Sparkles, Loader2, Download, Share2, RefreshCw, Wand2 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { SPORTS, ASSET_TYPES, type AssetType } from "@/lib/mock-data";
+import { createClient } from "@/lib/supabase/client";
+import { generateImage } from "@/lib/imageGen/provider";
 
 interface FormState {
   type: AssetType;
@@ -26,14 +29,8 @@ const STYLES = [
   { value: "cinematic", label: "Cinematic" },
 ];
 
-const GENERATED_PREVIEWS = [
-  "https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800&q=80",
-  "https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=800&q=80",
-  "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=800&q=80",
-  "https://images.unsplash.com/photo-1566577739112-5180d4bf9390?w=800&q=80",
-];
-
 export default function CreateAsset() {
+  const router = useRouter();
   const [form, setForm] = useState<FormState>({
     type: "gameday",
     sport: "Basketball",
@@ -46,7 +43,11 @@ export default function CreateAsset() {
     style: "bold",
   });
   const [step, setStep] = useState<"form" | "generating" | "result">("form");
-  const [generatedIndex, setGeneratedIndex] = useState(0);
+  const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
+  const [publishLoading, setPublishLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const supabase = useMemo(() => createClient(), []);
 
   const isScoreType = form.type === "final-score";
 
@@ -55,19 +56,86 @@ export default function CreateAsset() {
   }
 
   async function generate() {
+    setError(null);
     setStep("generating");
     // Simulate AI generation delay
     await new Promise((r) => setTimeout(r, 2800));
-    setGeneratedIndex(Math.floor(Math.random() * GENERATED_PREVIEWS.length));
+    const prompt = [
+      `${form.type} for ${form.sport}`,
+      `${form.homeTeam} vs ${form.awayTeam}`,
+      form.eventDate ? `event date: ${form.eventDate}` : "",
+      isScoreType && form.homeScore && form.awayScore ? `final score: ${form.homeScore}-${form.awayScore}` : "",
+      form.style ? `style: ${form.style}` : "",
+      form.customPrompt ? `notes: ${form.customPrompt}` : "",
+    ].filter(Boolean).join(" | ");
+    const res = await generateImage({ prompt });
+    setGeneratedImageUrl(res.imageUrl);
     setStep("result");
   }
 
   function regenerate() {
+    setError(null);
     setStep("generating");
     setTimeout(() => {
-      setGeneratedIndex(Math.floor(Math.random() * GENERATED_PREVIEWS.length));
+      const prompt = [
+        `${form.type} for ${form.sport}`,
+        `${form.homeTeam} vs ${form.awayTeam}`,
+        form.eventDate ? `event date: ${form.eventDate}` : "",
+        `style: ${form.style}`,
+        `variant: ${Math.random()}`,
+      ].filter(Boolean).join(" | ");
+      generateImage({ prompt }).then((res) => setGeneratedImageUrl(res.imageUrl)).catch(() => {});
       setStep("result");
     }, 2000);
+  }
+
+  const canPublish =
+    step === "result" &&
+    !!generatedImageUrl &&
+    !!form.homeTeam &&
+    !!form.awayTeam &&
+    !!form.eventDate &&
+    !publishLoading;
+
+  async function publish() {
+    if (!generatedImageUrl) return;
+    setError(null);
+    setPublishLoading(true);
+    try {
+      const { data: userRes, error: userErr } = await supabase.auth.getUser();
+      if (userErr) throw userErr;
+      const user = userRes.user;
+      if (!user) throw new Error("Not signed in");
+
+      const now = new Date().toISOString();
+      const homeScore = isScoreType && form.homeScore !== "" ? Number(form.homeScore) : null;
+      const awayScore = isScoreType && form.awayScore !== "" ? Number(form.awayScore) : null;
+
+      const { error: insertErr } = await supabase.from("assets").insert({
+        designer_id: user.id,
+        title: `${form.homeTeam} vs ${form.awayTeam}`,
+        type: form.type,
+        status: "published",
+        sport: form.sport,
+        home_team: form.homeTeam,
+        away_team: form.awayTeam,
+        home_score: Number.isFinite(homeScore as number) ? (homeScore as number) : null,
+        away_score: Number.isFinite(awayScore as number) ? (awayScore as number) : null,
+        event_date: form.eventDate,
+        image_url: generatedImageUrl,
+        created_at: now,
+        updated_at: now,
+        published_at: now,
+      });
+      if (insertErr) throw insertErr;
+
+      router.push("/designer");
+      router.refresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to publish");
+    } finally {
+      setPublishLoading(false);
+    }
   }
 
   return (
@@ -257,6 +325,12 @@ export default function CreateAsset() {
                 </>
               )}
             </button>
+
+            {error && (
+              <div className="px-3.5 py-2.5 rounded-xl bg-destructive/10 border border-destructive/20 text-xs text-destructive font-medium">
+                {error}
+              </div>
+            )}
           </div>
 
           {/* Right — Preview */}
@@ -307,7 +381,7 @@ export default function CreateAsset() {
 
                 {step === "result" && (
                   <Image
-                    src={GENERATED_PREVIEWS[generatedIndex]}
+                    src={generatedImageUrl ?? "https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800&q=80"}
                     alt="Generated asset"
                     fill
                     className="object-cover"
@@ -325,8 +399,13 @@ export default function CreateAsset() {
                   <p className="text-xs text-muted-foreground mb-4">{form.sport} · {ASSET_TYPES.find((t) => t.value === form.type)?.label}</p>
 
                   <div className="flex gap-2">
-                    <button className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all glow-orange-sm">
-                      <Share2 className="w-3.5 h-3.5" /> Publish
+                    <button
+                      onClick={publish}
+                      disabled={!canPublish}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all glow-orange-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {publishLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
+                      Publish
                     </button>
                     <button className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-muted text-foreground text-xs font-medium hover:bg-muted/70 transition-all">
                       <Download className="w-3.5 h-3.5" />

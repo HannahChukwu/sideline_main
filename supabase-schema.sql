@@ -100,7 +100,11 @@ create table if not exists public.schedules (
   time_text   text,
   location    text,
   home_away   text        check (home_away in ('home','away','neutral')),
-  created_at  timestamptz not null default now()
+  home_score  integer,
+  away_score  integer,
+  final       boolean     not null default false,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
 );
 
 -- Logos for schools/teams (stored in Supabase Storage; this table tracks paths)
@@ -227,6 +231,120 @@ create policy "Managers can manage reference images for own drafts"
       select id from public.manager_drafts where manager_id = auth.uid()
     )
   );
+
+-- ============================================================
+-- 6. PUBLISHED ASSETS + LIKES (FEEDS)
+--    Canonical feed content for student/athlete + designer library.
+-- ============================================================
+
+create table if not exists public.assets (
+  id                  uuid primary key default gen_random_uuid(),
+  designer_id          uuid        not null references auth.users(id) on delete cascade,
+  school_id            uuid        references public.schools(id) on delete set null,
+  team_id              uuid        references public.teams(id) on delete set null,
+  schedule_id          uuid        references public.schedules(id) on delete set null,
+  title                text        not null,
+  type                 text        not null check (type in ('gameday','final-score','poster','highlight')),
+  status               text        not null default 'draft' check (status in ('draft','published','archived')),
+  sport                text        not null,
+  home_team            text        not null,
+  away_team            text        not null,
+  home_score           integer,
+  away_score           integer,
+  event_date           date        not null,
+  image_url            text,
+  image_storage_path   text,
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now(),
+  published_at         timestamptz
+);
+
+-- Needed for PostgREST embeds like: profiles:designer_id(full_name)
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'assets_designer_profile_fkey'
+  ) then
+    alter table public.assets
+      add constraint assets_designer_profile_fkey
+      foreign key (designer_id)
+      references public.profiles(id)
+      on delete cascade;
+  end if;
+end $$;
+
+create index if not exists assets_published_at_idx on public.assets (published_at desc);
+create index if not exists assets_status_idx on public.assets (status);
+create index if not exists assets_designer_id_idx on public.assets (designer_id);
+create index if not exists assets_school_id_idx on public.assets (school_id);
+create index if not exists assets_team_id_idx on public.assets (team_id);
+
+create table if not exists public.asset_likes (
+  asset_id    uuid not null references public.assets(id) on delete cascade,
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  primary key (asset_id, user_id)
+);
+
+create index if not exists asset_likes_asset_id_idx on public.asset_likes (asset_id);
+create index if not exists asset_likes_user_id_idx on public.asset_likes (user_id);
+
+alter table public.assets enable row level security;
+alter table public.asset_likes enable row level security;
+
+-- Assets policies:
+-- - Everyone authenticated can read published assets.
+-- - Designers can read their own drafts/archived.
+-- - Designers can insert/update/delete their own assets.
+drop policy if exists "Authenticated can read published assets" on public.assets;
+create policy "Authenticated can read published assets"
+  on public.assets for select
+  using (status = 'published');
+
+drop policy if exists "Designers can read own assets" on public.assets;
+create policy "Designers can read own assets"
+  on public.assets for select
+  using (designer_id = auth.uid());
+
+drop policy if exists "Designers can insert own assets" on public.assets;
+create policy "Designers can insert own assets"
+  on public.assets for insert
+  with check (designer_id = auth.uid());
+
+drop policy if exists "Designers can update own assets" on public.assets;
+create policy "Designers can update own assets"
+  on public.assets for update
+  using (designer_id = auth.uid())
+  with check (designer_id = auth.uid());
+
+drop policy if exists "Designers can delete own assets" on public.assets;
+create policy "Designers can delete own assets"
+  on public.assets for delete
+  using (designer_id = auth.uid());
+
+-- Likes policies:
+-- - Anyone authenticated can read likes on published assets.
+-- - Users can like/unlike as themselves.
+drop policy if exists "Authenticated can read likes for published assets" on public.asset_likes;
+create policy "Authenticated can read likes for published assets"
+  on public.asset_likes for select
+  using (
+    asset_id in (
+      select id from public.assets where status = 'published'
+    )
+  );
+
+drop policy if exists "Users can like as themselves" on public.asset_likes;
+create policy "Users can like as themselves"
+  on public.asset_likes for insert
+  with check (user_id = auth.uid());
+
+drop policy if exists "Users can unlike as themselves" on public.asset_likes;
+create policy "Users can unlike as themselves"
+  on public.asset_likes for delete
+  using (user_id = auth.uid());
 
 -- ============================================================
 -- DONE. After running this:
