@@ -1,68 +1,86 @@
 # Sideline Studio
 
-AI-powered game day poster and asset workflow for school athletics. Built for designers, athletes, and students with role-based dashboards and a manager flow for creating match announcements and hype graphics.
+AI-powered athletics marketing studio with **role-based portals**:
 
-## What’s in the app right now
+- **Designer**: create + publish game-day assets
+- **Athlete**: review/like published assets
+- **Student**: browse the live feed
 
-- **Home** – Landing page with role entry (Designer, Athlete, Student) and sign in / sign up.
-- **Auth** – Email/password and **Google OAuth** via Supabase. Role is stored in `profiles` and used for redirects.
-- **Designer** – Dashboard and a create-asset flow (form + mock “generate” preview).
-- **Athlete** – Feed of assets with like/feedback (mock data).
-- **Student / Feed** – Public-style feed (mock data).
-- **Manager workflow** (`/manager`) – Multi-step flow for building a post:
-  1. **Team** – Pick a team (from Supabase, or mock if none).
-  2. **Athletes** – Pick featured athletes for that team.
-  3. **Schedule** – Import schedule via **CSV upload or paste**, map columns (date, time, opponent, location), then pick the matchup.
-  4. **Post type** – Gameday, Hype, or Announcement.
-  5. **Review** – Edit **image** and **caption** prompts (large text areas), add optional **reference images**, copy GenerationRequest JSON, then **Generate** (saves draft to Supabase and opens the editor).
-- **Manager editor** (`/manager/editor`) – Canvas preview with editable text blocks (headline, match line, date/time, location, CTA, footer). Click to edit, drag to reposition. Layout and copy are saved to Supabase when signed in. “Regenerate” and “Export” are stubbed for later.
+Auth + data is backed by **Supabase** (Auth + Postgres + RLS).
 
-All manager data (teams, athletes, schedules, drafts) is stored in **Supabase** and scoped per manager (RLS). You must be **signed in** to save drafts and use the editor.
+## Product overview
+
+- **Landing** (`/`): simple entry point for sign up / sign in (role routing happens after auth).
+- **Auth** (`/auth`): email/password + Google OAuth. During **signup**, users choose a role (Designer / Athlete / Student). A profile row is auto-created in `public.profiles`.
+- **Role routing**: after login/signup/callback, users are redirected based on `profiles.role`:
+  - `designer` → `/designer`
+  - `athlete` → `/athlete`
+  - `student` → `/feed`
+- **Navbar**: role badge is **dynamic** (pulled from `profiles`). Clicking the logo goes to **Profile**.
+- **Profile / Settings** (`/settings`): edit basic profile info (currently `full_name`). Role is read-only/locked after signup.
+
+### Portals
+
+- **Designer** (`/designer`): dashboard listing your assets.
+- **Create asset** (`/designer/create`): create/publish an asset (currently a mocked “AI generation” preview).
+- **Athlete** (`/athlete`): feed of published assets with like/feedback UX.
+- **Student** (`/feed`): live feed of published assets.
+
+### Manager flow (still in repo)
+
+The repo still includes a manager pipeline/editor under:
+- `/manager`
+- `/manager/editor`
+
+These routes use Supabase tables like `schools`, `teams`, `athletes`, `schedules`, `manager_drafts`. (There is no longer a “Manager Demo” entry point on the landing page.)
 
 ## Tech stack
 
-- **Framework** – Next.js 16 (App Router), React 19, TypeScript.
-- **Styling** – Tailwind CSS v4, shadcn-style components (Button, Card, Input, Tabs, etc.).
-- **Auth & DB** – Supabase (Auth, Postgres, RLS). No separate backend; API route only for auth callback.
-- **State** – React state and Supabase client; no Redux. Manager drafts are read/written via `src/lib/supabase/managerDraft.ts`.
+- **Next.js** (App Router), **React**, **TypeScript**
+- **Tailwind CSS** + shadcn-style components
+- **Supabase**: Auth, Postgres, RLS (`@supabase/supabase-js`, `@supabase/ssr`)
 
-## Getting started
+## Local development
 
-1. **Install and run**
+1) Install + run
 
-   ```bash
-   npm install
-   npm run dev
-   ```
+```bash
+npm install
+npm run dev
+```
 
-   Open [http://localhost:3000](http://localhost:3000).
+Open `http://localhost:3000`.
 
-2. **Supabase** – Create a project and add to `.env.local`:
+2) Configure Supabase env
 
-   ```env
-   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-   ```
+Create/update `.env.local`:
 
-3. **Schema and seed** – In the Supabase SQL Editor, run:
-   - `supabase-schema.sql` (tables + RLS).
-   - `supabase-seed-school.sql` after replacing `YOUR_MANAGER_USER_UID` with your user’s UUID (Authentication → Users).
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
 
-   See `docs/SUPABASE_SETUP.md` for step-by-step instructions.
+3) Set up database schema + seed
 
-4. **Google sign-in** (optional) – In Supabase Dashboard → Authentication → Providers, enable Google and set redirect URL to `http://localhost:3000/auth/callback`.
+In Supabase SQL Editor, run:
+- `supabase-schema.sql`
+- `supabase-seed-school.sql` (replace `YOUR_MANAGER_USER_UID` first)
 
-## Project structure (high level)
+4) (Optional) Google sign-in
 
-- `src/app/` – Routes: `page.tsx` (home), `auth/`, `designer/`, `athlete/`, `feed/`, `manager/`, `manager/editor/`.
-- `src/components/` – UI (brand, layout, schedule, pipeline wizard, editor canvas).
-- `src/lib/` – Supabase client/server, pipeline types, prompt compilers, schedule CSV parsing, editor layout and `buildCopyFromRequest`.
-- `supabase-schema.sql` – Full schema (profiles, schools, teams, athletes, schedules, logos, manager_drafts, RLS).
-- `supabase-seed-school.sql` – One school + one team for your manager user.
+Enable Google in Supabase → Authentication → Providers and set redirect URL to:
+- `http://localhost:3000/auth/callback`
 
-## Not built yet (stubs / env placeholders)
+## Repo structure (high level)
 
-- Real **image generation** (IMAGE_GEN_API_KEY) – “Generate” in the manager flow only saves the prompt and opens the editor.
-- **Caption AI** (ANTHROPIC_API_KEY) – Not wired; caption prompt is editable text only.
-- **File storage** (R2_ACCOUNT_ID, etc.) – Reference images in the review step are in-memory only; no upload to R2/Supabase Storage yet.
-- **Email** (RESEND_API_KEY) – Not used.
+- `src/app/`: routes (`auth`, `designer`, `athlete`, `feed`, `settings`, plus `manager/*`)
+- `src/components/`: UI, navbar, editor/pipeline components
+- `src/lib/`: supabase clients, types, feed/assets helpers, pipeline/editor helpers
+- `supabase-schema.sql`: schema + RLS + auth trigger for profile creation
+- `supabase-seed-school.sql`: seed data for manager/designer workflows
+
+## Status / known gaps
+
+- **Route protection**: portals are not fully locked down by role yet (recommended next).
+- **Real AI generation**: “generation” is mocked/stubbed; API keys/providers exist but aren’t fully wired end-to-end.
+- **Storage**: reference image uploads are not fully implemented.
