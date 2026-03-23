@@ -11,7 +11,6 @@ export default function DesignerDashboard() {
   const [filter, setFilter] = useState<"all" | "published" | "draft">("all");
   const [mounted, setMounted] = useState(false);
 
-<<<<<<< Updated upstream
   const assets       = useAppStore((s) => s.assets);
   const updateStatus = useAppStore((s) => s.updateStatus);
 
@@ -34,32 +33,6 @@ export default function DesignerDashboard() {
     { label: "Total Likes",    value: String(totalLikes),        icon: Heart,         color: "text-red-400" },
     { label: "Published",      value: String(publishedCount),    icon: CheckCircle,  color: "text-green-400" },
     { label: "This Week",      value: `+${thisWeek}`,            icon: TrendingUp,   color: "text-blue-400" },
-=======
-  const assets     = useAppStore((s) => s.assets);
-  const updateStatus = useAppStore((s) => s.updateStatus);
-
-  // Avoid hydration mismatch — only render store data after client mount
-  useEffect(() => { setMounted(true); }, []);
-
-  const displayAssets = mounted ? assets : [];
-  const filtered = displayAssets.filter((a) =>
-    filter === "all" ? a.status !== "archived" : a.status === filter
-  );
-
-  // Real stats from store
-  const totalAssets    = displayAssets.length;
-  const totalLikes     = displayAssets.reduce((sum, a) => sum + a.likes, 0);
-  const publishedCount = displayAssets.filter((a) => a.status === "published").length;
-
-  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const thisWeek   = displayAssets.filter((a) => a.createdAt >= oneWeekAgo).length;
-
-  const stats = [
-    { label: "Assets Created", value: String(totalAssets),   icon: ImageIcon,    color: "text-primary" },
-    { label: "Total Likes",    value: String(totalLikes),    icon: Heart,         color: "text-red-400" },
-    { label: "Published",      value: String(publishedCount), icon: CheckCircle, color: "text-green-400" },
-    { label: "This Week",      value: `+${thisWeek}`,         icon: TrendingUp,  color: "text-blue-400" },
->>>>>>> Stashed changes
   ];
 
   return (
@@ -130,11 +103,7 @@ export default function DesignerDashboard() {
           ))}
         </div>
 
-<<<<<<< Updated upstream
         {mounted && filtered.length === 0 && (
-=======
-        {filtered.length === 0 && mounted && (
->>>>>>> Stashed changes
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mb-4">
               <ImageIcon className="w-6 h-6 text-muted-foreground" />

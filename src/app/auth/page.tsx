@@ -38,20 +38,14 @@ function AuthForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-<<<<<<< HEAD
   const rawRole = searchParams.get("role") as Role | null;
   const preselectedRole: Role | null = rawRole && rawRole in ROLE_META ? rawRole : null;
 
   const [selectedRole, setSelectedRole] = useState<Role | null>(preselectedRole);
   const role: Role = selectedRole ?? "student";
-  const meta = ROLE_META[role];
 
   const initialMode = searchParams.get("mode") === "signup" ? "signup" : "signin";
   const [mode, setMode] = useState<"signin" | "signup">(initialMode);
-=======
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [selectedRole, setSelectedRole] = useState<Role>("student");
->>>>>>> eb4f417162a4db54db073d509c6f9104ce6c8d19
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -80,7 +74,7 @@ function AuthForm() {
     setSelectedRole(fromQuery);
   }, [searchParams]);
 
-  const meta = ROLE_META[selectedRole];
+  const meta = ROLE_META[role];
 
   async function handleGoogleSignIn() {
     setError(null);
@@ -147,7 +141,7 @@ function AuthForm() {
 
         if (data.session) {
           // Email confirmation disabled → signed in immediately
-          router.push(ROLE_ROUTES[selectedRole]);
+          router.push(ROLE_ROUTES[role]);
           router.refresh();
         } else {
           // Confirmation email sent
@@ -170,7 +164,7 @@ function AuthForm() {
             .single();
 
           const roleFromDb = (profile as unknown as { role?: Role | null } | null)?.role ?? null;
-          const destination = roleFromDb ? ROLE_ROUTES[roleFromDb] : ROLE_ROUTES[selectedRole];
+          const destination = roleFromDb ? ROLE_ROUTES[roleFromDb] : ROLE_ROUTES[role];
 
           router.push(destination);
           router.refresh();
