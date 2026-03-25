@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
-import { Heart, Eye, MoreHorizontal, Clock, CheckCircle, FileEdit } from "lucide-react";
+import Link from "next/link";
+import { Heart, Eye, CheckCircle, Clock, MessageSquare, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +26,7 @@ export type AssetCardModel = {
   likes: number;
   designerName: string;
   createdAt?: string;
+  updates?: { id: string }[];
 };
 
 interface AssetCardProps {
@@ -34,6 +37,8 @@ interface AssetCardProps {
   onLike?: (id: string) => void;
   /** Designer dashboard only — promote a draft to published */
   onPublish?: (id: string) => void;
+  /** Designer dashboard only — permanently delete this asset */
+  onDelete?: (id: string) => void;
 }
 
 const typeColors: Record<string, string> = {
@@ -50,70 +55,103 @@ const typeLabels: Record<string, string> = {
   "highlight":   "Highlight",
 };
 
-export function AssetCard({ asset, variant = "designer", liked = false, onLike, onPublish }: AssetCardProps) {
-  const isPublished   = asset.status === "published";
-  const canLike       = variant === "athlete" || variant === "student" || variant === "fan";
+export function AssetCard({ asset, variant = "designer", liked = false, onLike, onPublish, onDelete }: AssetCardProps) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const isPublished  = asset.status === "published";
+  const canLike      = variant !== "designer";
+  const updateCount  = asset.updates?.length ?? 0;
 
   return (
     <div className="group relative rounded-xl overflow-hidden border border-border/50 bg-card transition-all duration-300 hover:border-border hover:shadow-2xl hover:shadow-black/50 hover:-translate-y-0.5">
-      {/* Image */}
-      <div className="relative aspect-[16/9] overflow-hidden bg-muted">
-        <Image
-          src={asset.imageUrl}
-          alt={asset.title}
-          fill
-          className="object-cover transition-transform duration-500 group-hover:scale-105"
-          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-          unoptimized
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
-        {/* Top badges */}
-        <div className="absolute top-3 left-3 right-3 flex items-start justify-between">
-          <Badge className={cn("text-[10px] font-medium border", typeColors[asset.type])}>
-            {typeLabels[asset.type]}
-          </Badge>
-          {variant === "designer" && (
-            <div className={cn(
-              "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium",
-              isPublished
-                ? "bg-green-500/20 text-green-400 border border-green-500/20"
-                : "bg-yellow-500/20 text-yellow-400 border border-yellow-500/20"
-            )}>
-              {isPublished ? <CheckCircle className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
-              {isPublished ? "Published" : "Draft"}
+      {/* Delete confirmation overlay */}
+      {confirmDelete && (
+        <div className="absolute inset-0 z-20 bg-background/90 backdrop-blur-sm flex flex-col items-center justify-center gap-3 rounded-xl">
+          <Trash2 className="w-6 h-6 text-destructive" />
+          <p className="text-sm font-semibold text-foreground text-center px-4">Delete this asset?</p>
+          <p className="text-xs text-muted-foreground text-center px-6">This can't be undone.</p>
+          <div className="flex gap-2 mt-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete?.(asset.id); }}
+              className="px-4 py-2 rounded-lg bg-destructive text-white text-xs font-bold hover:bg-destructive/90 transition-colors"
+            >
+              Delete
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
+              className="px-4 py-2 rounded-lg bg-muted text-foreground text-xs font-semibold hover:bg-muted/70 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Clickable image area → detail page */}
+      <Link href={`/asset/${asset.id}`} className="block">
+        <div className="relative aspect-[16/9] overflow-hidden bg-muted">
+          <Image
+            src={asset.imageUrl}
+            alt={asset.title}
+            fill
+            className="object-cover transition-transform duration-500 group-hover:scale-105"
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            unoptimized
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+          {/* Top badges */}
+          <div className="absolute top-3 left-3 right-3 flex items-start justify-between">
+            <Badge className={cn("text-[10px] font-medium border", typeColors[asset.type])}>
+              {typeLabels[asset.type]}
+            </Badge>
+            {variant === "designer" && (
+              <div className={cn(
+                "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium",
+                isPublished
+                  ? "bg-green-500/20 text-green-400 border border-green-500/20"
+                  : "bg-yellow-500/20 text-yellow-400 border border-yellow-500/20"
+              )}>
+                {isPublished ? <CheckCircle className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
+                {isPublished ? "Published" : "Draft"}
+              </div>
+            )}
+          </div>
+
+          {/* Live updates badge */}
+          {updateCount > 0 && (
+            <div className="absolute bottom-3 right-3 flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-500/20 border border-green-500/30 text-[10px] font-semibold text-green-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+              {updateCount} update{updateCount !== 1 ? "s" : ""}
+            </div>
+          )}
+
+          {/* Score overlay for final-score type */}
+          {asset.type === "final-score" && asset.homeScore !== undefined && (
+            <div className="absolute bottom-0 left-0 right-0 p-3">
+              <div className="flex items-baseline gap-3">
+                <div className="text-center">
+                  <div className="text-[10px] text-white/60 uppercase tracking-wider">{asset.homeTeam}</div>
+                  <div className="text-3xl font-bold text-white tabular-nums">{asset.homeScore}</div>
+                </div>
+                <div className="text-white/30 text-lg font-light mb-1">—</div>
+                <div className="text-center">
+                  <div className="text-[10px] text-white/60 uppercase tracking-wider">{asset.awayTeam}</div>
+                  <div className="text-3xl font-bold text-white/70 tabular-nums">{asset.awayScore}</div>
+                </div>
+              </div>
             </div>
           )}
         </div>
-
-        {/* Score overlay for final-score type */}
-        {asset.type === "final-score" && asset.homeScore !== undefined && (
-          <div className="absolute bottom-0 left-0 right-0 p-3">
-            <div className="flex items-baseline gap-3">
-              <div className="text-center">
-                <div className="text-[10px] text-white/60 uppercase tracking-wider">{asset.homeTeam}</div>
-                <div className="text-3xl font-bold text-white tabular-nums">{asset.homeScore}</div>
-              </div>
-              <div className="text-white/30 text-lg font-light mb-1">—</div>
-              <div className="text-center">
-                <div className="text-[10px] text-white/60 uppercase tracking-wider">{asset.awayTeam}</div>
-                <div className="text-3xl font-bold text-white/70 tabular-nums">{asset.awayScore}</div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      </Link>
 
       {/* Content */}
       <div className="p-4">
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <h3 className="font-medium text-sm text-foreground leading-snug line-clamp-2">{asset.title}</h3>
-          {variant === "designer" && (
-            <button className="text-muted-foreground hover:text-foreground p-0.5 shrink-0 transition-colors">
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+        <Link href={`/asset/${asset.id}`} className="block mb-2">
+          <h3 className="font-medium text-sm text-foreground leading-snug line-clamp-2 hover:text-primary transition-colors">
+            {asset.title}
+          </h3>
+        </Link>
 
         <div className="flex items-center gap-2 mb-3">
           <span className="text-xs text-muted-foreground">{asset.sport}</span>
@@ -121,12 +159,8 @@ export function AssetCard({ asset, variant = "designer", liked = false, onLike, 
           <span className="text-xs text-muted-foreground">
             {new Date(asset.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
           </span>
-          {variant !== "designer" && (
-            <>
-              <span className="text-muted-foreground/30">·</span>
-              <span className="text-xs text-muted-foreground">by {asset.designerName}</span>
-            </>
-          )}
+          <span className="text-muted-foreground/30">·</span>
+          <span className="text-xs text-muted-foreground">by {asset.designerName}</span>
         </div>
 
         {/* Footer */}
@@ -134,7 +168,7 @@ export function AssetCard({ asset, variant = "designer", liked = false, onLike, 
           <div className="flex items-center gap-3">
             {/* Like button */}
             <button
-              onClick={() => canLike && onLike?.(asset.id)}
+              onClick={(e) => { e.stopPropagation(); canLike && onLike?.(asset.id); }}
               disabled={!canLike}
               className={cn(
                 "flex items-center gap-1.5 text-xs transition-all",
@@ -153,31 +187,52 @@ export function AssetCard({ asset, variant = "designer", liked = false, onLike, 
               <Eye className="w-3.5 h-3.5" />
               <span>{Math.max(asset.likes * 4 + 10, 10)}</span>
             </div>
+
+            {/* Updates count */}
+            {updateCount > 0 && (
+              <Link
+                href={`/asset/${asset.id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-1.5 text-xs text-green-400 hover:text-green-300 transition-colors"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>{updateCount}</span>
+              </Link>
+            )}
           </div>
 
-          {/* Designer dashboard: promote draft */}
-          {variant === "designer" && asset.status === "draft" && (
+          {/* Designer dashboard: actions */}
+          {variant === "designer" && (
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => onPublish?.(asset.id)}
-                className="flex items-center gap-1 text-[11px] text-green-400 hover:text-green-300 font-medium transition-colors"
-              >
-                <CheckCircle className="w-3 h-3" /> Publish
-              </button>
-              <button className="flex items-center gap-1 text-[11px] text-primary hover:text-primary/80 font-medium transition-colors">
-                <FileEdit className="w-3 h-3" /> Edit
-              </button>
+              {asset.status === "draft" && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onPublish?.(asset.id); }}
+                  className="flex items-center gap-1 text-[11px] text-green-400 hover:text-green-300 font-medium transition-colors"
+                >
+                  <CheckCircle className="w-3 h-3" /> Publish
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+                  className="flex items-center gap-1 text-[11px] text-muted-foreground/50 hover:text-destructive font-medium transition-colors"
+                  title="Delete asset"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              )}
             </div>
           )}
 
-          {/* Athlete CTA */}
-          {variant === "athlete" && !liked && (
-            <button
-              onClick={() => onLike?.(asset.id)}
+          {/* View updates CTA for non-designers */}
+          {variant !== "designer" && (
+            <Link
+              href={`/asset/${asset.id}`}
+              onClick={(e) => e.stopPropagation()}
               className="text-[11px] text-primary hover:text-primary/80 font-medium transition-colors"
             >
-              Give feedback
-            </button>
+              View →
+            </Link>
           )}
         </div>
       </div>

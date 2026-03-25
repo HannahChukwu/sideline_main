@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Heart, Trophy, Star } from "lucide-react";
+import Link from "next/link";
+import { Heart, Trophy, Star, BarChart2 } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { AssetCard } from "@/components/designer/asset-card";
 import { useAppStore } from "@/lib/store";
@@ -34,9 +35,18 @@ export default function AthleteDashboard() {
                 Review designs from your team&apos;s designers. Like what you love.
               </p>
             </div>
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20">
-              <Trophy className="w-3.5 h-3.5 text-blue-400" />
-              <span className="text-xs font-medium text-blue-400">Falcons Athletics</span>
+            <div className="flex items-center gap-3">
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20">
+                <Trophy className="w-3.5 h-3.5 text-blue-400" />
+                <span className="text-xs font-medium text-blue-400">Falcons Athletics</span>
+              </div>
+              <Link
+                href="/athlete/stats"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
+              >
+                <BarChart2 className="w-3.5 h-3.5" />
+                My Stats
+              </Link>
             </div>
           </div>
         </div>

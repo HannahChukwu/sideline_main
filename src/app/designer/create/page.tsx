@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { ArrowLeft, Sparkles, Loader2, Download, Share2, RefreshCw, Wand2, Send, MessageSquare, CheckCircle, Clock } from "lucide-react";
+import { ArrowLeft, Sparkles, Loader2, Download, Share2, RefreshCw, Wand2, Send, MessageSquare, CheckCircle, Clock, ChevronDown, ChevronUp, FlaskConical } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -110,6 +110,8 @@ export default function CreateAsset() {
     mood: "",
   });
   const [step, setStep] = useState<"form" | "generating" | "result" | "error">("form");
+  const [showOptional, setShowOptional] = useState(false);
+  const [devMode, setDevMode] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [generatedTitle, setGeneratedTitle] = useState<string>("");
   const [generatedTagline, setGeneratedTagline] = useState<string>("");
@@ -127,7 +129,8 @@ export default function CreateAsset() {
   const [igPostSuccess, setIgPostSuccess] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const addAsset = useAppStore((s) => s.addAsset);
+  const addAsset          = useAppStore((s) => s.addAsset);
+  const currentDesigner   = useAppStore((s) => s.currentDesigner);
   const supabase = useMemo(() => createClient(), []);
 
   const isScoreType = form.type === "final-score";
@@ -157,6 +160,11 @@ export default function CreateAsset() {
     // Instagram captions can include multiple paragraphs via \n.
     return paragraphs.join("\n\n").slice(0, 2200);
   }, [form.awayScore, form.awayTeam, form.eventDate, form.homeScore, form.homeTeam, isScoreType]);
+
+  // Pre-fill designer name from the store identity
+  useEffect(() => {
+    if (currentDesigner && !designerName) setDesignerName(currentDesigner);
+  }, [currentDesigner, designerName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -208,6 +216,33 @@ export default function CreateAsset() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isRefining]);
 
+  function buildMockImage(homeTeam: string, awayTeam: string, sport: string): string {
+    const bgColors = ["#0f172a", "#1a1a2e", "#0d1117", "#111827", "#1c1917"];
+    const accentColors = ["#6366f1", "#f97316", "#a855f7", "#3b82f6", "#10b981"];
+    const seed = (homeTeam + awayTeam).length % bgColors.length;
+    const bg = bgColors[seed];
+    const accent = accentColors[seed];
+    const home = homeTeam || "HOME";
+    const away = awayTeam || "AWAY";
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+      <defs>
+        <radialGradient id="g" cx="50%" cy="45%" r="60%">
+          <stop offset="0%" stop-color="${accent}" stop-opacity="0.25"/>
+          <stop offset="100%" stop-color="${bg}" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <rect width="1080" height="1920" fill="${bg}"/>
+      <rect width="1080" height="1920" fill="url(#g)"/>
+      <line x1="0" y1="960" x2="1080" y2="960" stroke="${accent}" stroke-width="2" stroke-opacity="0.15"/>
+      <text x="540" y="640" text-anchor="middle" fill="white" font-size="110" font-weight="900" font-family="Arial Black,sans-serif" letter-spacing="-2" opacity="0.95">${home.substring(0,10)}</text>
+      <text x="540" y="780" text-anchor="middle" fill="${accent}" font-size="64" font-weight="700" font-family="Arial,sans-serif" letter-spacing="12" opacity="0.8">VS</text>
+      <text x="540" y="940" text-anchor="middle" fill="white" font-size="110" font-weight="900" font-family="Arial Black,sans-serif" letter-spacing="-2" opacity="0.95">${away.substring(0,10)}</text>
+      <text x="540" y="1080" text-anchor="middle" fill="white" font-size="36" font-weight="400" font-family="Arial,sans-serif" letter-spacing="8" opacity="0.35">${sport.toUpperCase()}</text>
+      <text x="540" y="1800" text-anchor="middle" fill="${accent}" font-size="22" font-weight="600" font-family="Arial,sans-serif" letter-spacing="4" opacity="0.5">DEV PLACEHOLDER</text>
+    </svg>`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
   async function generate(refinements: string[] = []) {
     const isInitial = refinements.length === 0;
     if (isInitial) {
@@ -215,6 +250,17 @@ export default function CreateAsset() {
       setGenerateError("");
     } else {
       setIsRefining(true);
+    }
+
+    // ── Dev / mock mode: skip the API, return instantly ───────────────────
+    if (devMode) {
+      await new Promise((r) => setTimeout(r, 900)); // simulate brief delay
+      setGeneratedImage(buildMockImage(form.homeTeam, form.awayTeam, form.sport));
+      setGeneratedTitle(`${form.homeTeam || "Home"} vs ${form.awayTeam || "Away"}`);
+      setGeneratedTagline(`${form.sport} · Mock Poster`);
+      setStep("result");
+      setIsRefining(false);
+      return;
     }
 
     try {
@@ -293,7 +339,7 @@ export default function CreateAsset() {
       imageUrl: generatedImage,
       style: form.style,
       format: form.format,
-      designerName: designerName.trim() || "Designer",
+      designerName: designerName.trim() || currentDesigner || "Designer",
     });
     setSaveState(status === "published" ? "published" : "draft");
   }
@@ -327,37 +373,42 @@ export default function CreateAsset() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* ── Left — Form ─────────────────────────────────────────────────── */}
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-bold mb-1">Generate Asset</h1>
-              <p className="text-sm text-muted-foreground">
-                Configure your design — the more you fill in, the less you&apos;ll need to type in chat.
-              </p>
-            </div>
+          <div className="space-y-5">
 
-            {/* ── Asset Type ─── */}
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Asset Type</label>
-              <div className="grid grid-cols-2 gap-2">
-                {ASSET_TYPES.map((t) => (
-                  <button
-                    key={t.value}
-                    onClick={() => set("type", t.value)}
-                    className={`p-3 rounded-xl border text-sm font-medium text-left transition-all ${
-                      form.type === t.value
-                        ? "border-primary/40 bg-primary/10 text-primary"
-                        : "border-border/50 bg-card text-muted-foreground hover:border-border hover:text-foreground"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+            {/* Header + Dev mode toggle */}
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h1 className="text-2xl font-bold mb-1">Generate Asset</h1>
+                <p className="text-sm text-muted-foreground">
+                  Pick a format, then describe your vision — or expand optional settings for fine control.
+                </p>
               </div>
+              <button
+                onClick={() => setDevMode((v) => !v)}
+                title="Toggle dev/mock mode"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold shrink-0 transition-all ${
+                  devMode
+                    ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                    : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <FlaskConical className="w-3.5 h-3.5" />
+                {devMode ? "Mock ON" : "Mock"}
+              </button>
             </div>
 
-            {/* ── Output Format ─── */}
+            {devMode && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20 text-xs text-amber-400">
+                <FlaskConical className="w-3.5 h-3.5 shrink-0" />
+                Dev mode — generation uses a placeholder poster instantly. No API calls.
+              </div>
+            )}
+
+            {/* ── Output Format (ALWAYS SHOWN — required) ─── */}
             <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Output Format</label>
+              <label className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3 block">
+                Output Format <span className="text-primary ml-1">*</span>
+              </label>
               <div className="grid grid-cols-3 gap-2">
                 {FORMATS.map((f) => (
                   <button
@@ -369,17 +420,10 @@ export default function CreateAsset() {
                         : "border-border/50 bg-card text-muted-foreground hover:border-border hover:text-foreground"
                     }`}
                   >
-                    {/* Format shape preview */}
                     <div className="flex items-center gap-1.5 mb-2">
-                      {f.value === "story" && (
-                        <div className="w-3 h-5 rounded-sm border-2 border-current opacity-60" />
-                      )}
-                      {f.value === "post" && (
-                        <div className="w-4 h-4 rounded-sm border-2 border-current opacity-60" />
-                      )}
-                      {f.value === "banner" && (
-                        <div className="w-6 h-3.5 rounded-sm border-2 border-current opacity-60" />
-                      )}
+                      {f.value === "story"  && <div className="w-3 h-5 rounded-sm border-2 border-current opacity-60" />}
+                      {f.value === "post"   && <div className="w-4 h-4 rounded-sm border-2 border-current opacity-60" />}
+                      {f.value === "banner" && <div className="w-6 h-3.5 rounded-sm border-2 border-current opacity-60" />}
                     </div>
                     <span className="block text-sm font-semibold">{f.label}</span>
                     <span className="block text-xs font-normal mt-0.5 opacity-60">{f.description}</span>
@@ -388,228 +432,246 @@ export default function CreateAsset() {
               </div>
             </div>
 
-            {/* ── Sport ─── */}
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Sport</label>
-              <div className="flex flex-wrap gap-2">
-                {SPORTS.slice(0, 8).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => set("sport", s)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                      form.sport === s
-                        ? "bg-primary/10 text-primary border border-primary/30"
-                        : "bg-card border border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-                <select
-                  value={SPORTS.slice(0, 8).includes(form.sport) ? "" : form.sport}
-                  onChange={(e) => e.target.value && set("sport", e.target.value)}
-                  className="px-3 py-1.5 rounded-lg text-xs bg-card border border-border/50 text-muted-foreground cursor-pointer"
-                >
-                  <option value="">More...</option>
-                  {SPORTS.slice(8).map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* ── Teams ─── */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Home Team</label>
-                <input
-                  type="text"
-                  value={form.homeTeam}
-                  onChange={(e) => set("homeTeam", e.target.value)}
-                  placeholder="Falcons"
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Away Team</label>
-                <input
-                  type="text"
-                  value={form.awayTeam}
-                  onChange={(e) => set("awayTeam", e.target.value)}
-                  placeholder="Rivals"
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
-                />
-              </div>
-            </div>
-
-            {/* ── Scores (final-score only) ─── */}
-            {isScoreType && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Home Score</label>
-                  <input
-                    type="number"
-                    value={form.homeScore}
-                    onChange={(e) => set("homeScore", e.target.value)}
-                    placeholder="87"
-                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Away Score</label>
-                  <input
-                    type="number"
-                    value={form.awayScore}
-                    onChange={(e) => set("awayScore", e.target.value)}
-                    placeholder="74"
-                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* ── Event Date ─── */}
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Event Date</label>
-              <input
-                type="date"
-                value={form.eventDate}
-                onChange={(e) => set("eventDate", e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all [color-scheme:dark]"
-              />
-            </div>
-
-            {/* ── Team Colors ─── */}
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Team Colors</label>
-              <div className="grid grid-cols-3 gap-2">
-                {COLOR_PALETTES.map((p) => (
-                  <button
-                    key={p.value}
-                    onClick={() => set("colorPalette", p.value)}
-                    className={`p-2.5 rounded-xl border text-xs font-medium text-left transition-all ${
-                      form.colorPalette === p.value
-                        ? "border-primary/40 bg-primary/10 text-primary"
-                        : "border-border/50 bg-card text-muted-foreground hover:border-border hover:text-foreground"
-                    }`}
-                  >
-                    {p.colors.length > 0 ? (
-                      <div className="flex gap-1 mb-1.5">
-                        {p.colors.map((c) => (
-                          <div
-                            key={c}
-                            className="w-4 h-4 rounded-sm border border-white/10 flex-shrink-0"
-                            style={{ backgroundColor: c }}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="w-4 h-4 rounded-sm border border-dashed border-current opacity-40 mb-1.5" />
-                    )}
-                    <span className="block font-medium leading-tight">{p.label}</span>
-                    {p.description && (
-                      <span className="block text-xs font-normal opacity-50 mt-0.5">{p.description}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* ── Visual Style ─── */}
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Visual Style</label>
-              <div className="grid grid-cols-1 gap-2">
-                {STYLES.map((s) => (
-                  <button
-                    key={s.value}
-                    onClick={() => set("style", s.value)}
-                    className={pill(form.style === s.value)}
-                  >
-                    <span>{s.label}</span>
-                    <span className={pillDesc(form.style === s.value)}>{s.description}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* ── Composition Focus ─── */}
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Composition Focus</label>
-              <div className="grid grid-cols-1 gap-2">
-                {COMPOSITION_OPTIONS.map((c) => (
-                  <button
-                    key={c.value}
-                    onClick={() => set("composition", c.value)}
-                    className={pill(form.composition === c.value)}
-                  >
-                    <span>{c.label}</span>
-                    <span className={pillDesc(form.composition === c.value)}>{c.description}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* ── Lighting ─── */}
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Lighting</label>
-              <div className="grid grid-cols-1 gap-2">
-                {LIGHTING_OPTIONS.map((l) => (
-                  <button
-                    key={l.value}
-                    onClick={() => set("lighting", l.value)}
-                    className={pill(form.lighting === l.value)}
-                  >
-                    <span>{l.label}</span>
-                    <span className={pillDesc(form.lighting === l.value)}>{l.description}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* ── Mood / Energy ─── */}
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Mood / Energy</label>
-              <div className="grid grid-cols-1 gap-2">
-                {MOOD_OPTIONS.map((m) => (
-                  <button
-                    key={m.value}
-                    onClick={() => set("mood", m.value)}
-                    className={pill(form.mood === m.value)}
-                  >
-                    <span>{m.label}</span>
-                    <span className={pillDesc(form.mood === m.value)}>{m.description}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* ── Additional Instructions (pre-generation only) ─── */}
+            {/* ── AI Generator (MAIN FOCUS — always shown pre-result) ─── */}
             {step !== "result" && (
-              <div>
-                <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
-                  Additional Instructions{" "}
-                  <span className="text-muted-foreground/50 normal-case">(optional)</span>
-                </label>
-                <textarea
-                  value={form.customPrompt}
-                  onChange={(e) => set("customPrompt", e.target.value)}
-                  placeholder="Mascot name, jersey numbers, location, special effects, anything specific to your school..."
-                  rows={3}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
-                />
+              <div className="relative rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 to-primary/[0.02] overflow-hidden">
+                {/* Glow accent */}
+                <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
+                <div className="p-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-bold text-foreground">AI Generator</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    Describe the poster you want — teams, vibe, special details, mascot, anything.
+                    The AI will handle the rest.
+                  </p>
+                  <textarea
+                    value={form.customPrompt}
+                    onChange={(e) => set("customPrompt", e.target.value)}
+                    placeholder="e.g. Falcons vs Eagles, game day energy, mascot flying in, school colors red & gold, crowd going wild in the background, big bold text..."
+                    rows={5}
+                    className="w-full px-4 py-3 rounded-xl bg-background/60 border border-primary/20 text-sm text-foreground placeholder:text-foreground/25 focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all resize-none leading-relaxed"
+                  />
+                  {form.customPrompt.trim() && (
+                    <p className="text-[11px] text-primary/60 mt-2 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      Great — hit Generate and the AI will build around your description.
+                    </p>
+                  )}
+                </div>
               </div>
             )}
+
+            {/* ── Optional Context (collapsible) ─── */}
+            <div className="rounded-xl border border-border/40 overflow-hidden">
+              <button
+                onClick={() => setShowOptional((v) => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/[0.02] transition-colors"
+              >
+                <div>
+                  <span className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                    Optional Context
+                  </span>
+                  <span className="ml-2 text-xs text-muted-foreground/60">
+                    (type, sport, teams, style, lighting…)
+                  </span>
+                </div>
+                {showOptional
+                  ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" />
+                  : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                }
+              </button>
+
+              {showOptional && (
+                <div className="px-4 pb-5 space-y-5 border-t border-border/40">
+
+                  {/* Asset Type */}
+                  <div className="pt-4">
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Asset Type</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {ASSET_TYPES.map((t) => (
+                        <button
+                          key={t.value}
+                          onClick={() => set("type", t.value)}
+                          className={`p-3 rounded-xl border text-sm font-medium text-left transition-all ${
+                            form.type === t.value
+                              ? "border-primary/40 bg-primary/10 text-primary"
+                              : "border-border/50 bg-card text-muted-foreground hover:border-border hover:text-foreground"
+                          }`}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sport */}
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Sport</label>
+                    <div className="flex flex-wrap gap-2">
+                      {SPORTS.slice(0, 8).map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => set("sport", s)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                            form.sport === s
+                              ? "bg-primary/10 text-primary border border-primary/30"
+                              : "bg-card border border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                      <select
+                        value={SPORTS.slice(0, 8).includes(form.sport) ? "" : form.sport}
+                        onChange={(e) => e.target.value && set("sport", e.target.value)}
+                        className="px-3 py-1.5 rounded-lg text-xs bg-card border border-border/50 text-muted-foreground cursor-pointer"
+                      >
+                        <option value="">More...</option>
+                        {SPORTS.slice(8).map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Teams */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Home Team</label>
+                      <input type="text" value={form.homeTeam} onChange={(e) => set("homeTeam", e.target.value)} placeholder="Falcons"
+                        className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Away Team</label>
+                      <input type="text" value={form.awayTeam} onChange={(e) => set("awayTeam", e.target.value)} placeholder="Rivals"
+                        className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Scores */}
+                  {isScoreType && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Home Score</label>
+                        <input type="number" value={form.homeScore} onChange={(e) => set("homeScore", e.target.value)} placeholder="87"
+                          className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Away Score</label>
+                        <input type="number" value={form.awayScore} onChange={(e) => set("awayScore", e.target.value)} placeholder="74"
+                          className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Event Date */}
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Event Date</label>
+                    <input type="date" value={form.eventDate} onChange={(e) => set("eventDate", e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all [color-scheme:dark]"
+                    />
+                  </div>
+
+                  {/* Team Colors */}
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Team Colors</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {COLOR_PALETTES.map((p) => (
+                        <button key={p.value} onClick={() => set("colorPalette", p.value)}
+                          className={`p-2.5 rounded-xl border text-xs font-medium text-left transition-all ${
+                            form.colorPalette === p.value
+                              ? "border-primary/40 bg-primary/10 text-primary"
+                              : "border-border/50 bg-card text-muted-foreground hover:border-border hover:text-foreground"
+                          }`}
+                        >
+                          {p.colors.length > 0 ? (
+                            <div className="flex gap-1 mb-1.5">
+                              {p.colors.map((c) => (
+                                <div key={c} className="w-4 h-4 rounded-sm border border-white/10 flex-shrink-0" style={{ backgroundColor: c }} />
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="w-4 h-4 rounded-sm border border-dashed border-current opacity-40 mb-1.5" />
+                          )}
+                          <span className="block font-medium leading-tight">{p.label}</span>
+                          {p.description && <span className="block text-xs font-normal opacity-50 mt-0.5">{p.description}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Visual Style */}
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Visual Style</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {STYLES.map((s) => (
+                        <button key={s.value} onClick={() => set("style", s.value)} className={pill(form.style === s.value)}>
+                          <span>{s.label}</span>
+                          <span className={pillDesc(form.style === s.value)}>{s.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Composition */}
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Composition Focus</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {COMPOSITION_OPTIONS.map((c) => (
+                        <button key={c.value} onClick={() => set("composition", c.value)} className={pill(form.composition === c.value)}>
+                          <span>{c.label}</span>
+                          <span className={pillDesc(form.composition === c.value)}>{c.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Lighting */}
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Lighting</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {LIGHTING_OPTIONS.map((l) => (
+                        <button key={l.value} onClick={() => set("lighting", l.value)} className={pill(form.lighting === l.value)}>
+                          <span>{l.label}</span>
+                          <span className={pillDesc(form.lighting === l.value)}>{l.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Mood */}
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Mood / Energy</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {MOOD_OPTIONS.map((m) => (
+                        <button key={m.value} onClick={() => set("mood", m.value)} className={pill(form.mood === m.value)}>
+                          <span>{m.label}</span>
+                          <span className={pillDesc(form.mood === m.value)}>{m.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+              )}
+            </div>
 
             {/* ── Generate Button ─── */}
             <button
               onClick={() => generate([])}
-              disabled={step === "generating" || !form.homeTeam || !form.awayTeam}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-semibold transition-all hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed glow-orange-sm hover:glow-orange"
+              disabled={step === "generating"}
+              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold transition-all hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {step === "generating" ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Generating with AI...
+                  {devMode ? "Building mock poster…" : "Generating with AI..."}
                 </>
               ) : (
                 <>
@@ -619,7 +681,7 @@ export default function CreateAsset() {
               )}
             </button>
 
-            {generateError && (
+            {generateError && !devMode && (
               <div className="px-3.5 py-2.5 rounded-xl bg-destructive/10 border border-destructive/20 text-xs text-destructive font-medium">
                 {generateError}
               </div>

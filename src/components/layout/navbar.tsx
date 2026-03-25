@@ -15,14 +15,21 @@ interface NavbarProps {
   userEmail?: string | null;
 }
 
+const athleteLinks = [
+  { href: "/athlete", label: "My Feed" },
+  { href: "/scores", label: "Scores" },
+];
+
+const studentLinks = [
+  { href: "/feed", label: "Live Feed" },
+  { href: "/scores", label: "Scores" },
+];
+
 const designerLinks = [
   { href: "/designer", label: "Dashboard" },
   { href: "/designer/create", label: "Generator" },
+  { href: "/scores", label: "Scores" },
 ];
-
-const athleteLinks = [{ href: "/athlete", label: "My Feed" }];
-
-const studentLinks = [{ href: "/feed", label: "Live Feed" }];
 
 export function Navbar({ role, userEmail }: NavbarProps) {
   const pathname = usePathname();

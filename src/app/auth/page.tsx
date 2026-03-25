@@ -42,7 +42,6 @@ function AuthForm() {
   const preselectedRole: Role | null = rawRole && rawRole in ROLE_META ? rawRole : null;
 
   const [selectedRole, setSelectedRole] = useState<Role | null>(preselectedRole);
-  const role: Role = selectedRole ?? "student";
 
   const initialMode = searchParams.get("mode") === "signup" ? "signup" : "signin";
   const [mode, setMode] = useState<"signin" | "signup">(initialMode);
@@ -70,13 +69,17 @@ function AuthForm() {
 
   useEffect(() => {
     const rawRole = searchParams.get("role") as Role | null;
-    const fromQuery: Role = rawRole && rawRole in ROLE_META ? rawRole : "student";
-    setSelectedRole(fromQuery);
+    if (rawRole && rawRole in ROLE_META) {
+      setSelectedRole(rawRole);
+    }
+    // If no role in URL, keep null so the role picker shows
   }, [searchParams]);
 
-  const meta = ROLE_META[role];
-
   async function handleGoogleSignIn() {
+    if (!selectedRole) {
+      setError("Please select your role first.");
+      return;
+    }
     setError(null);
     setGoogleLoading(true);
 
@@ -107,6 +110,10 @@ function AuthForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!selectedRole) {
+      setError("Please select your role first.");
+      return;
+    }
     setError(null);
     setLoading(true);
 
@@ -141,7 +148,7 @@ function AuthForm() {
 
         if (data.session) {
           // Email confirmation disabled → signed in immediately
-          router.push(ROLE_ROUTES[role]);
+          router.push(selectedRole ? ROLE_ROUTES[selectedRole] : "/");
           router.refresh();
         } else {
           // Confirmation email sent
@@ -164,7 +171,7 @@ function AuthForm() {
             .single();
 
           const roleFromDb = (profile as unknown as { role?: Role | null } | null)?.role ?? null;
-          const destination = roleFromDb ? ROLE_ROUTES[roleFromDb] : ROLE_ROUTES[role];
+          const destination = roleFromDb ? ROLE_ROUTES[roleFromDb] : (selectedRole ? ROLE_ROUTES[selectedRole] : "/");
 
           router.push(destination);
           router.refresh();
@@ -176,54 +183,6 @@ function AuthForm() {
     } finally {
       setLoading(false);
     }
-  }
-
-  // ── Role selection step (when no role was pre-selected) ──────────────────────
-  if (!selectedRole) {
-    return (
-      <div
-        className={cn(
-          "w-full max-w-sm transition-all duration-500",
-          visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-        )}
-      >
-        <h1 className="text-2xl font-bold tracking-tight mb-1">
-          {mode === "signup" ? "Create your account" : "Welcome back"}
-        </h1>
-        <p className="text-sm text-muted-foreground mb-7">Choose how you use Sideline</p>
-
-        <div className="flex flex-col gap-2.5">
-          {(Object.entries(ROLE_META) as [Role, typeof ROLE_META[Role]][]).map(([r, m]) => (
-            <button
-              key={r}
-              onClick={() => setSelectedRole(r)}
-              className={cn(
-                "flex items-center gap-4 px-4 py-3.5 rounded-xl border text-left transition-all duration-200 hover:scale-[1.01] active:scale-[0.99]",
-                "border-white/10 bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/20"
-              )}
-            >
-              <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center shrink-0", m.color)}>
-                {m.icon}
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">{m.label}</p>
-                <p className="text-[11px] text-foreground/40 font-medium">{m.description}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        <p className="text-center text-xs text-muted-foreground mt-5">
-          {mode === "signin" ? "Don't have an account?" : "Already have an account?"}{" "}
-          <button
-            onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setError(null); }}
-            className="text-primary font-semibold hover:underline underline-offset-2 transition-colors"
-          >
-            {mode === "signin" ? "Sign up" : "Sign in"}
-          </button>
-        </p>
-      </div>
-    );
   }
 
   // ── Email confirmation sent state ────────────────────────────────────────────
@@ -254,6 +213,8 @@ function AuthForm() {
   }
 
   // ── Auth form ────────────────────────────────────────────────────────────────
+  const activeMeta = selectedRole ? ROLE_META[selectedRole] : null;
+
   return (
     <div
       className={cn(
@@ -261,54 +222,45 @@ function AuthForm() {
         visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
       )}
     >
-      {/* Role pill — click to go back to role selection */}
-      <button
-        onClick={() => setSelectedRole(null)}
-        className={cn("inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold mb-6 tracking-wide hover:opacity-80 transition-opacity", meta.color)}
-      >
-        {meta.icon}
-        {meta.label} Portal
-        <span className="text-[10px] opacity-50 ml-0.5">· change</span>
-      </button>
-
       {/* Heading */}
       <h1 className="text-2xl font-bold tracking-tight mb-1">
         {mode === "signin" ? "Welcome back" : "Create your account"}
       </h1>
-      <p className="text-sm text-muted-foreground mb-7">{meta.description}</p>
+      <p className="text-sm text-muted-foreground mb-6">
+        {activeMeta ? activeMeta.description : "Choose how you use Sideline"}
+      </p>
 
-      {/* Role picker (signup only) */}
-      {mode === "signup" && (
-        <div className="mb-5">
-          <div className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground/70 mb-2">
-            Choose your role
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            {(Object.keys(ROLE_META) as Role[]).map((r) => {
-              const m = ROLE_META[r];
-              const active = selectedRole === r;
-              return (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setSelectedRole(r)}
-                  className={cn(
-                    "rounded-xl border px-3 py-2 text-left transition-all",
-                    active
-                      ? "border-primary/40 bg-primary/10"
-                      : "border-white/10 bg-white/5 hover:bg-white/7"
-                  )}
-                >
-                  <div className={cn("flex items-center gap-2 text-xs font-semibold", active ? "text-primary" : "text-foreground/80")}>
-                    <span className={cn("shrink-0", active ? "text-primary" : "text-foreground/60")}>{m.icon}</span>
-                    {m.label}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+      {/* Role picker — always visible in both signin and signup */}
+      <div className="mb-6">
+        <div className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground/70 mb-2">
+          I am a…
         </div>
-      )}
+        <div className="grid grid-cols-3 gap-2">
+          {(Object.entries(ROLE_META) as [Role, typeof ROLE_META[Role]][]).map(([r, m]) => {
+            const active = selectedRole === r;
+            return (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setSelectedRole(r)}
+                className={cn(
+                  "flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 transition-all duration-200",
+                  active
+                    ? "border-primary/50 bg-primary/10 scale-[1.02]"
+                    : "border-white/10 bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/20"
+                )}
+              >
+                <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", active ? m.color : "text-foreground/40 bg-white/5")}>
+                  {m.icon}
+                </div>
+                <span className={cn("text-xs font-bold", active ? "text-primary" : "text-foreground/60")}>
+                  {m.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Google OAuth */}
       <button
@@ -442,7 +394,7 @@ export default function AuthPage() {
           className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          Change role
+          Back to home
         </Link>
       </header>
 
