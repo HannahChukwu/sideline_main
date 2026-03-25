@@ -96,7 +96,7 @@ export function Navbar({ role, userEmail }: NavbarProps) {
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-border/50">
       <div className="glass px-6 py-4 flex items-center justify-between">
         {/* Logo */}
-        <Link href="/settings" className="group transition-opacity hover:opacity-80">
+        <Link href={links[0]?.href ?? "/"} className="group transition-opacity hover:opacity-80">
           <Logo size="sm" />
         </Link>
 
