@@ -76,7 +76,7 @@ function AuthForm() {
   }, [searchParams]);
 
   async function handleGoogleSignIn() {
-    if (!selectedRole) {
+    if (mode === "signup" && !selectedRole) {
       setError("Please select your role first.");
       return;
     }
@@ -110,7 +110,7 @@ function AuthForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedRole) {
+    if (mode === "signup" && !selectedRole) {
       setError("Please select your role first.");
       return;
     }
@@ -227,40 +227,44 @@ function AuthForm() {
         {mode === "signin" ? "Welcome back" : "Create your account"}
       </h1>
       <p className="text-sm text-muted-foreground mb-6">
-        {activeMeta ? activeMeta.description : "Choose how you use Sideline"}
+        {mode === "signin"
+          ? "Sign in to continue."
+          : (activeMeta ? activeMeta.description : "Choose how you use Sideline")}
       </p>
 
-      {/* Role picker — always visible in both signin and signup */}
-      <div className="mb-6">
-        <div className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground/70 mb-2">
-          I am a…
+      {/* Role picker — signup only */}
+      {mode === "signup" && (
+        <div className="mb-6">
+          <div className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground/70 mb-2">
+            I am a…
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {(Object.entries(ROLE_META) as [Role, typeof ROLE_META[Role]][]).map(([r, m]) => {
+              const active = selectedRole === r;
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setSelectedRole(r)}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 transition-all duration-200",
+                    active
+                      ? "border-primary/50 bg-primary/10 scale-[1.02]"
+                      : "border-white/10 bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/20"
+                  )}
+                >
+                  <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", active ? m.color : "text-foreground/40 bg-white/5")}>
+                    {m.icon}
+                  </div>
+                  <span className={cn("text-xs font-bold", active ? "text-primary" : "text-foreground/60")}>
+                    {m.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          {(Object.entries(ROLE_META) as [Role, typeof ROLE_META[Role]][]).map(([r, m]) => {
-            const active = selectedRole === r;
-            return (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setSelectedRole(r)}
-                className={cn(
-                  "flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 transition-all duration-200",
-                  active
-                    ? "border-primary/50 bg-primary/10 scale-[1.02]"
-                    : "border-white/10 bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/20"
-                )}
-              >
-                <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", active ? m.color : "text-foreground/40 bg-white/5")}>
-                  {m.icon}
-                </div>
-                <span className={cn("text-xs font-bold", active ? "text-primary" : "text-foreground/60")}>
-                  {m.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      )}
 
       {/* Google OAuth */}
       <button
