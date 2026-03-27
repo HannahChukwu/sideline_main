@@ -40,12 +40,29 @@ const FORMAT_FLUX: Record<
   banner: { aspect_ratio: "16:9", resolution: "1 MP" },
 };
 
-function imageUrlFromReplicateOutput(output: unknown): string {
-  if (typeof output === "string" && /^https?:\/\//i.test(output)) return output;
-  if (output && typeof output === "object" && "url" in output && typeof (output as { url: unknown }).url === "function") {
-    const u = (output as { url: () => unknown }).url();
-    if (typeof u === "string" && /^https?:\/\//i.test(u)) return u;
+function httpUrlFromUnknown(value: unknown): string | null {
+  if (typeof value === "string" && /^https?:\/\//i.test(value)) return value;
+  if (value && typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    if (typeof o.href === "string" && /^https?:\/\//i.test(o.href)) return o.href;
+    const s = String(value);
+    if (/^https?:\/\//i.test(s)) return s;
   }
+  return null;
+}
+
+async function imageUrlFromReplicateOutput(output: unknown): Promise<string> {
+  if (typeof output === "string" && /^https?:\/\//i.test(output)) return output;
+
+  if (output && typeof output === "object" && "url" in output && typeof (output as { url: unknown }).url === "function") {
+    let u: unknown = (output as { url: () => unknown }).url();
+    if (u != null && typeof u === "object" && "then" in u && typeof (u as Promise<unknown>).then === "function") {
+      u = await (u as Promise<unknown>);
+    }
+    const fromUrl = httpUrlFromUnknown(u);
+    if (fromUrl) return fromUrl;
+  }
+
   if (Array.isArray(output) && output.length > 0) {
     return imageUrlFromReplicateOutput(output[0]);
   }
@@ -417,7 +434,7 @@ Return a JSON object with exactly these fields (no markdown, raw JSON only):
         prompt_upsampling: false,
       },
     });
-    imageUrl = imageUrlFromReplicateOutput(output);
+    imageUrl = await imageUrlFromReplicateOutput(output);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Image generation failed";
     return NextResponse.json({ error: message }, { status: 502 });
