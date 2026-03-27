@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import OpenAI from "openai";
+import Replicate from "replicate";
 import { z } from "zod";
 
 const RequestSchema = z.object({
@@ -23,12 +23,34 @@ const RequestSchema = z.object({
   refinements: z.array(z.string()).optional().default([]),
 });
 
-// Maps output format → DALL-E 3 size and orientation hint
+// Maps output format → orientation hint for prompts; pixel size kept for parity with FLUX aspect targets
 const FORMAT_CONFIG: Record<string, { size: "1024x1792" | "1024x1024" | "1792x1024"; orientationHint: string }> = {
   story:  { size: "1024x1792", orientationHint: "portrait 9:16, optimised for Instagram Story or TikTok" },
   post:   { size: "1024x1024", orientationHint: "square 1:1, optimised for Instagram post" },
   banner: { size: "1792x1024", orientationHint: "landscape 16:9, optimised for Twitter banner or web header" },
 };
+
+/** Replicate flux-2-pro: one run = one image; 1 MP keeps cost predictable (see model docs). */
+const FORMAT_FLUX: Record<
+  string,
+  { aspect_ratio: "1:1" | "9:16" | "16:9"; resolution: "1 MP" }
+> = {
+  story:  { aspect_ratio: "9:16", resolution: "1 MP" },
+  post:   { aspect_ratio: "1:1", resolution: "1 MP" },
+  banner: { aspect_ratio: "16:9", resolution: "1 MP" },
+};
+
+function imageUrlFromReplicateOutput(output: unknown): string {
+  if (typeof output === "string" && /^https?:\/\//i.test(output)) return output;
+  if (output && typeof output === "object" && "url" in output && typeof (output as { url: unknown }).url === "function") {
+    const u = (output as { url: () => unknown }).url();
+    if (typeof u === "string" && /^https?:\/\//i.test(u)) return u;
+  }
+  if (Array.isArray(output) && output.length > 0) {
+    return imageUrlFromReplicateOutput(output[0]);
+  }
+  throw new Error("No image URL returned from Replicate");
+}
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
   gameday:       "Game Day Hype",
@@ -370,29 +392,32 @@ Return a JSON object with exactly these fields (no markdown, raw JSON only):
     }
   }
 
-  // ── Step 2: Generate image with DALL-E 3 ──────────────────────────────────
-  if (!process.env.IMAGE_GEN_API_KEY) {
+  // ── Step 2: Generate image (Replicate FLUX.2 Pro) ───────────────────────────
+  const replicateToken = process.env.REPLICATE_API_TOKEN?.trim();
+  if (!replicateToken) {
     return NextResponse.json(
-      { error: "IMAGE_GEN_API_KEY is not configured" },
+      { error: "REPLICATE_API_TOKEN is not configured" },
       { status: 500 }
     );
   }
 
-  const openai = new OpenAI({ apiKey: process.env.IMAGE_GEN_API_KEY });
-
   let imageUrl: string;
   try {
-    const imageResponse = await openai.images.generate({
-      model:           "dall-e-3",
-      prompt:          copy.imagePrompt,
-      n:               1,
-      size:            formatConfig.size,
-      quality:         "hd",
-      response_format: "url",
+    const fluxFormat = FORMAT_FLUX[format ?? "story"] ?? FORMAT_FLUX.story;
+    const replicate = new Replicate({ auth: replicateToken });
+    const output = await replicate.run("black-forest-labs/flux-2-pro", {
+      input: {
+        prompt: copy.imagePrompt,
+        aspect_ratio: fluxFormat.aspect_ratio,
+        resolution: fluxFormat.resolution,
+        input_images: [],
+        output_format: "webp",
+        output_quality: 85,
+        safety_tolerance: 2,
+        prompt_upsampling: false,
+      },
     });
-    const url = imageResponse.data?.[0]?.url;
-    if (!url) throw new Error("No image URL returned from DALL-E");
-    imageUrl = url;
+    imageUrl = imageUrlFromReplicateOutput(output);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Image generation failed";
     return NextResponse.json({ error: message }, { status: 502 });
