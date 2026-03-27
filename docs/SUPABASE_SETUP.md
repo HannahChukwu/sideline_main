@@ -12,7 +12,7 @@
 
 5. Click **Run** (or press Cmd/Ctrl+Enter).
 
-6. Confirm it succeeds (no red errors). You should see “Success. No rows returned.” Tables created: `profiles`, `schools`, `teams`, `athletes`, `schedules`, `logos`, `manager_drafts`, `draft_reference_images`, plus RLS policies.
+6. Confirm it succeeds (no red errors). You should see “Success. No rows returned.” Tables created: `profiles`, `schools`, `teams`, `athletes`, `schedules`, `logos`, `manager_drafts`, `draft_reference_images`, plus RLS policies. The schema also defines Storage bucket **`generation-references`** (public read, authenticated upload to `/{user_id}/…`) for designer reference images used with AI generation. If you added the bucket SQL in a later edit, re-run the full `supabase-schema.sql` or the storage block at the end of that file so uploads from `/designer/create` succeed.
 
 ---
 

@@ -374,10 +374,63 @@ create policy "Users can unlike as themselves"
   using (user_id = auth.uid());
 
 -- ============================================================
+-- STORAGE — AI generation reference images (public read for Replicate)
+-- Path convention: {auth.uid()}/{uuid}.{ext}
+-- Re-run safe: policies use DROP IF EXISTS.
+-- ============================================================
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'generation-references',
+  'generation-references',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Public read generation-references" on storage.objects;
+create policy "Public read generation-references"
+  on storage.objects for select
+  using (bucket_id = 'generation-references');
+
+drop policy if exists "Authenticated insert own generation-references" on storage.objects;
+create policy "Authenticated insert own generation-references"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'generation-references'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Authenticated update own generation-references" on storage.objects;
+create policy "Authenticated update own generation-references"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'generation-references'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Authenticated delete own generation-references" on storage.objects;
+create policy "Authenticated delete own generation-references"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'generation-references'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- ============================================================
 -- DONE. After running this:
 -- 1. Go to Authentication → Email Templates and customise if needed.
 -- 2. For local dev, disable email confirmation:
 --    Authentication → Settings → "Enable email confirmations" → OFF
 -- 3. Create at least one school row for your manager user so the
 --    manager workflow can attach teams/athletes/schedules to it.
+-- 4. Storage: bucket generation-references holds designer reference uploads;
+--    ensure NEXT_PUBLIC_SUPABASE_URL in .env matches this project.
 -- ============================================================

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { ArrowLeft, Sparkles, Loader2, Download, Share2, RefreshCw, Wand2, Send, MessageSquare, CheckCircle, Clock, ChevronDown, ChevronUp, FlaskConical } from "lucide-react";
+import { ArrowLeft, Sparkles, Loader2, Download, Share2, RefreshCw, Wand2, Send, MessageSquare, CheckCircle, Clock, ChevronDown, ChevronUp, FlaskConical, ImagePlus, X } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -9,6 +9,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { SPORTS, ASSET_TYPES, type AssetType } from "@/lib/mock-data";
 import { useAppStore } from "@/lib/store";
 import { createClient } from "@/lib/supabase/client";
+import { uploadGenerationReference } from "@/lib/supabase/referenceUpload";
 
 interface FormState {
   type: AssetType;
@@ -18,6 +19,10 @@ interface FormState {
   homeScore: string;
   awayScore: string;
   eventDate: string;
+  venue: string;
+  gameTime: string;
+  broadcastOrStreaming: string;
+  hashtag: string;
   customPrompt: string;
   style: string;
   format: string;
@@ -101,6 +106,10 @@ export default function CreateAsset() {
     homeScore: "",
     awayScore: "",
     eventDate: "",
+    venue: "",
+    gameTime: "",
+    broadcastOrStreaming: "",
+    hashtag: "",
     customPrompt: "",
     style: "illustrated",
     format: "story",
@@ -109,6 +118,28 @@ export default function CreateAsset() {
     lighting: "",
     mood: "",
   });
+  /** Order: athlete, home logo, away logo — matches API / FLUX image 1–3. */
+  const [refAthleteFile, setRefAthleteFile] = useState<File | null>(null);
+  const [refHomeLogoFile, setRefHomeLogoFile] = useState<File | null>(null);
+  const [refAwayLogoFile, setRefAwayLogoFile] = useState<File | null>(null);
+
+  const refPreviews = useMemo(
+    () => ({
+      athlete: refAthleteFile ? URL.createObjectURL(refAthleteFile) : null,
+      homeLogo: refHomeLogoFile ? URL.createObjectURL(refHomeLogoFile) : null,
+      awayLogo: refAwayLogoFile ? URL.createObjectURL(refAwayLogoFile) : null,
+    }),
+    [refAthleteFile, refHomeLogoFile, refAwayLogoFile]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (refPreviews.athlete) URL.revokeObjectURL(refPreviews.athlete);
+      if (refPreviews.homeLogo) URL.revokeObjectURL(refPreviews.homeLogo);
+      if (refPreviews.awayLogo) URL.revokeObjectURL(refPreviews.awayLogo);
+    };
+  }, [refPreviews.athlete, refPreviews.homeLogo, refPreviews.awayLogo]);
+
   const [step, setStep] = useState<"form" | "generating" | "result" | "error">("form");
   const [showOptional, setShowOptional] = useState(false);
   const [devMode, setDevMode] = useState(false);
@@ -264,6 +295,33 @@ export default function CreateAsset() {
     }
 
     try {
+      const referenceImageUrls: string[] = [];
+      if (refAthleteFile || refHomeLogoFile || refAwayLogoFile) {
+        const { data: userData, error: userErr } = await supabase.auth.getUser();
+        if (userErr || !userData.user) {
+          if (isInitial) {
+            setGenerateError("Sign in to attach reference images (JPEG, PNG, GIF, or WebP, max 5MB each).");
+            setStep("error");
+          }
+          setIsRefining(false);
+          return;
+        }
+        const uid = userData.user.id;
+        try {
+          if (refAthleteFile) referenceImageUrls.push(await uploadGenerationReference(supabase, uid, refAthleteFile));
+          if (refHomeLogoFile) referenceImageUrls.push(await uploadGenerationReference(supabase, uid, refHomeLogoFile));
+          if (refAwayLogoFile) referenceImageUrls.push(await uploadGenerationReference(supabase, uid, refAwayLogoFile));
+        } catch (upErr) {
+          const msg = upErr instanceof Error ? upErr.message : "Reference upload failed";
+          if (isInitial) {
+            setGenerateError(msg);
+            setStep("error");
+          }
+          setIsRefining(false);
+          return;
+        }
+      }
+
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -275,6 +333,10 @@ export default function CreateAsset() {
           homeScore: form.homeScore || undefined,
           awayScore: form.awayScore || undefined,
           eventDate: form.eventDate || undefined,
+          venue: form.venue.trim() || undefined,
+          gameTime: form.gameTime.trim() || undefined,
+          broadcastOrStreaming: form.broadcastOrStreaming.trim() || undefined,
+          hashtag: form.hashtag.trim() || undefined,
           style: form.style,
           format: form.format,
           customPrompt: form.customPrompt || undefined,
@@ -283,6 +345,7 @@ export default function CreateAsset() {
           lighting: form.lighting || undefined,
           mood: form.mood || undefined,
           refinements: refinements.length > 0 ? refinements : undefined,
+          referenceImageUrls: referenceImageUrls.length > 0 ? referenceImageUrls : undefined,
         }),
       });
       const data = await res.json();
@@ -463,6 +526,103 @@ export default function CreateAsset() {
               </div>
             )}
 
+            {/* ── Reference images (FLUX) — athlete + optional logos ─── */}
+            {step !== "result" && (
+              <div className="rounded-xl border border-border/50 bg-card/40 p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <ImagePlus className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-semibold text-foreground uppercase tracking-wider">Reference images</p>
+                    <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                      Optional. Order matters: <span className="text-foreground/80">1 — Athlete</span>,{" "}
+                      <span className="text-foreground/80">2 — Home logo</span>,{" "}
+                      <span className="text-foreground/80">3 — Away logo</span>. JPEG/PNG/GIF/WebP, max 5MB each. Sign in
+                      required. You are responsible for rights and accuracy of logos.
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {(
+                    [
+                      {
+                        key: "athlete" as const,
+                        label: "Athlete",
+                        preview: refPreviews.athlete,
+                        file: refAthleteFile,
+                        setFile: setRefAthleteFile,
+                        inputId: "ref-athlete-input",
+                      },
+                      {
+                        key: "home",
+                        label: "Home logo",
+                        preview: refPreviews.homeLogo,
+                        file: refHomeLogoFile,
+                        setFile: setRefHomeLogoFile,
+                        inputId: "ref-home-logo-input",
+                      },
+                      {
+                        key: "away",
+                        label: "Away logo",
+                        preview: refPreviews.awayLogo,
+                        file: refAwayLogoFile,
+                        setFile: setRefAwayLogoFile,
+                        inputId: "ref-away-logo-input",
+                      },
+                    ] as const
+                  ).map((slot) => (
+                    <div
+                      key={slot.key}
+                      className="relative rounded-xl border border-dashed border-border/60 bg-background/40 p-3 flex flex-col min-h-[120px]"
+                    >
+                      <input
+                        id={slot.inputId}
+                        type="file"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        className="sr-only"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] ?? null;
+                          slot.setFile(f);
+                          e.target.value = "";
+                        }}
+                      />
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <label htmlFor={slot.inputId} className="text-xs font-medium text-foreground cursor-pointer hover:text-primary">
+                          {slot.label}
+                        </label>
+                        {slot.file && (
+                          <button
+                            type="button"
+                            onClick={() => slot.setFile(null)}
+                            className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            aria-label={`Remove ${slot.label}`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      {slot.preview ? (
+                        <Image
+                          src={slot.preview}
+                          alt=""
+                          width={320}
+                          height={80}
+                          unoptimized
+                          className="mt-auto w-full h-20 object-contain rounded-lg bg-muted/30"
+                        />
+                      ) : (
+                        <label
+                          htmlFor={slot.inputId}
+                          className="mt-auto flex flex-1 items-center justify-center text-[11px] text-muted-foreground cursor-pointer py-4"
+                        >
+                          Choose file
+                        </label>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* ── Optional Context (collapsible) ─── */}
             <div className="rounded-xl border border-border/40 overflow-hidden">
               <button
@@ -576,6 +736,52 @@ export default function CreateAsset() {
                     <input type="date" value={form.eventDate} onChange={(e) => set("eventDate", e.target.value)}
                       className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all [color-scheme:dark]"
                     />
+                  </div>
+
+                  {/* Event details (poster copy) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Venue</label>
+                      <input
+                        type="text"
+                        value={form.venue}
+                        onChange={(e) => set("venue", e.target.value)}
+                        placeholder="e.g. State Arena"
+                        className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Game time</label>
+                      <input
+                        type="text"
+                        value={form.gameTime}
+                        onChange={(e) => set("gameTime", e.target.value)}
+                        placeholder="e.g. 7:00 PM ET"
+                        className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Broadcast / stream</label>
+                      <input
+                        type="text"
+                        value={form.broadcastOrStreaming}
+                        onChange={(e) => set("broadcastOrStreaming", e.target.value)}
+                        placeholder="e.g. ESPN+ / Big Ten Network"
+                        className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Hashtag</label>
+                      <input
+                        type="text"
+                        value={form.hashtag}
+                        onChange={(e) => set("hashtag", e.target.value)}
+                        placeholder="e.g. #GoBlue"
+                        className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
+                      />
+                    </div>
                   </div>
 
                   {/* Team Colors */}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import Replicate from "replicate";
 import { z } from "zod";
+import { GENERATION_REFERENCES_BUCKET } from "@/lib/supabase/referenceUpload";
 
 const RequestSchema = z.object({
   type: z.enum(["gameday", "final-score", "poster", "highlight"]),
@@ -11,6 +12,10 @@ const RequestSchema = z.object({
   homeScore: z.string().optional(),
   awayScore: z.string().optional(),
   eventDate: z.string().optional(),
+  venue: z.string().optional(),
+  gameTime: z.string().optional(),
+  broadcastOrStreaming: z.string().optional(),
+  hashtag: z.string().optional(),
   style: z.string().optional().default("illustrated"),
   format: z.enum(["story", "post", "banner"]).optional().default("story"),
   customPrompt: z.string().optional(),
@@ -21,7 +26,50 @@ const RequestSchema = z.object({
   mood: z.string().optional(),
   // Chat-based refinement history — accumulated user edit messages
   refinements: z.array(z.string()).optional().default([]),
+  /** HTTPS URLs to jpeg/png/gif/webp; order: athlete (1), home logo (2), away logo (3), … */
+  referenceImageUrls: z.array(z.string().url()).max(8).optional().default([]),
 });
+
+/**
+ * Only allow HTTPS URLs from this project's public Supabase storage bucket so Replicate can fetch
+ * without leaking the route into an open proxy.
+ */
+function sanitizeReferenceImageUrls(urls: string[]): string[] | NextResponse {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  if (!base) {
+    return NextResponse.json(
+      { error: "NEXT_PUBLIC_SUPABASE_URL is not configured" },
+      { status: 500 }
+    );
+  }
+  let allowedHost: string;
+  try {
+    allowedHost = new URL(base).hostname;
+  } catch {
+    return NextResponse.json({ error: "Invalid NEXT_PUBLIC_SUPABASE_URL" }, { status: 500 });
+  }
+  const prefix = `/storage/v1/object/public/${GENERATION_REFERENCES_BUCKET}/`;
+  const out: string[] = [];
+  for (const raw of urls) {
+    let u: URL;
+    try {
+      u = new URL(raw);
+    } catch {
+      return NextResponse.json({ error: "Invalid reference image URL" }, { status: 400 });
+    }
+    if (u.protocol !== "https:") {
+      return NextResponse.json({ error: "Reference images must use HTTPS URLs" }, { status: 400 });
+    }
+    if (u.hostname !== allowedHost || !u.pathname.startsWith(prefix)) {
+      return NextResponse.json(
+        { error: "Reference image URLs must come from this app’s Supabase reference storage" },
+        { status: 400 }
+      );
+    }
+    out.push(u.toString());
+  }
+  return out;
+}
 
 // Maps output format → orientation hint for prompts; pixel size kept for parity with FLUX aspect targets
 const FORMAT_CONFIG: Record<string, { size: "1024x1792" | "1024x1024" | "1792x1024"; orientationHint: string }> = {
@@ -254,8 +302,34 @@ function buildFallbackPrompt(params: {
   mood?: string;
   refinements?: string[];
   orientationHint?: string;
+  eventDate?: string;
+  venue?: string;
+  gameTime?: string;
+  broadcastOrStreaming?: string;
+  hashtag?: string;
+  referenceImageCount: number;
 }): string {
-  const { sport, homeTeam, awayTeam, type, style, scoreInfo, customPrompt, colorPalette, composition, lighting, mood, refinements, orientationHint } = params;
+  const {
+    sport,
+    homeTeam,
+    awayTeam,
+    type,
+    style,
+    scoreInfo,
+    customPrompt,
+    colorPalette,
+    composition,
+    lighting,
+    mood,
+    refinements,
+    orientationHint,
+    eventDate,
+    venue,
+    gameTime,
+    broadcastOrStreaming,
+    hashtag,
+    referenceImageCount,
+  } = params;
   const styleDesc = STYLE_DESCRIPTORS[style] ?? STYLE_DESCRIPTORS.illustrated;
   const sportEnv = SPORT_ENVIRONMENTS[sport] ?? `${sport} arena or stadium, sport-specific equipment and atmosphere`;
   const typeMood = TYPE_MOOD[type] ?? TYPE_MOOD.gameday;
@@ -264,22 +338,52 @@ function buildFallbackPrompt(params: {
     ? `User refinements to apply: ${refinements.join("; ")}.`
     : "";
 
+  const referenceBlock =
+    referenceImageCount > 0
+      ? `Reference images are supplied to the model in order — use 1-based indexing in your reasoning: ` +
+        `image 1 must be the primary athlete (preserve facial identity and general appearance; integrate into a polished college athletics poster). ` +
+        (referenceImageCount >= 2
+          ? `image 2 is the home team logo or mark — place it crisply with correct colors/shape; user is responsible for trademark accuracy. `
+          : "") +
+        (referenceImageCount >= 3
+          ? `image 3 is the away / opponent team mark — same care as image 2. `
+          : "") +
+        `Blend references naturally with lighting and perspective.`
+      : "";
+
+  const scheduleBits = [
+    eventDate ? `Date on poster (exact spelling): ${eventDate}.` : "",
+    venue ? `Venue (exact): ${venue}.` : "",
+    gameTime ? `Time (exact): ${gameTime}.` : "",
+    broadcastOrStreaming ? `Broadcast or stream line (exact): ${broadcastOrStreaming}.` : "",
+    hashtag ? `Hashtag (exact, include if it fits): ${hashtag}.` : "",
+  ].filter(Boolean);
+
+  const typoDirectives =
+    `This is a FLUX.2 Pro college / university athletics graphic. Include clean, legible typography with correct spelling: ` +
+    `school names "${homeTeam}" (home) and "${awayTeam}" (opponent)${eventDate ? `, date ${eventDate}` : ""}. ` +
+    `Hierarchy: large headline matchup, secondary line for date or venue, smaller details for broadcast or hashtag. ` +
+    `High production value, print-ready sports marketing layout, correct kerning, strong contrast for social sharing. ` +
+    `User is responsible for accuracy of logos and third-party marks.`;
+
   const parts = [
     styleDesc + ".",
+    typoDirectives,
+    referenceBlock,
     `Sport: ${sport}.`,
     `Setting: ${sportEnv}.`,
     `Mood: ${typeMood}.`,
     mood ? `Energy override: ${mood}.` : "",
-    scoreInfo ? scoreInfo : `${homeTeam} facing ${awayTeam} matchup.`,
+    scoreInfo ? scoreInfo : `${homeTeam} vs ${awayTeam} matchup.`,
+    ...scheduleBits,
     colorPalette ? `Color palette: dominant ${colorPalette} color scheme throughout.` : "",
     composition ? `Composition: ${composition}.` : "",
     lighting ? `Lighting: ${lighting}.` : "",
     customPrompt ? `Creative direction: ${customPrompt}.` : "",
     refinementContext,
-    "No readable text, words, numbers, or legible team names in the image.",
     orientationHint
       ? `Framing: ${orientationHint}.`
-      : "Portrait orientation. Digital art, professional sports graphic design.",
+      : "Portrait orientation. Professional digital sports graphic design.",
   ];
 
   return parts.filter(Boolean).join(" ");
@@ -307,6 +411,10 @@ export async function POST(req: NextRequest) {
     homeScore,
     awayScore,
     eventDate,
+    venue,
+    gameTime,
+    broadcastOrStreaming,
+    hashtag,
     style,
     format,
     customPrompt,
@@ -315,7 +423,12 @@ export async function POST(req: NextRequest) {
     lighting,
     mood,
     refinements,
+    referenceImageUrls: rawReferenceImageUrls,
   } = parsed.data;
+
+  const sanitizedRefs = sanitizeReferenceImageUrls(rawReferenceImageUrls);
+  if (sanitizedRefs instanceof NextResponse) return sanitizedRefs;
+  const referenceImageCount = sanitizedRefs.length;
 
   const formatConfig = FORMAT_CONFIG[format ?? "story"] ?? FORMAT_CONFIG.story;
   const assetLabel   = ASSET_TYPE_LABELS[type];
@@ -325,6 +438,18 @@ export async function POST(req: NextRequest) {
       ? `Final score: ${homeTeam} ${homeScore} – ${awayTeam} ${awayScore}.`
       : "";
   const dateInfo = eventDate ? `Event date: ${eventDate}.` : "";
+  const venueInfo    = venue ? `Venue: ${venue}.` : "";
+  const timeInfo     = gameTime ? `Game time: ${gameTime}.` : "";
+  const broadcastInfo = broadcastOrStreaming ? `Watch / broadcast: ${broadcastOrStreaming}.` : "";
+  const hashtagInfo  = hashtag ? `Hashtag to include if suitable: ${hashtag}.` : "";
+
+  const referenceInstructions =
+    referenceImageCount > 0
+      ? `
+Reference images (FLUX input order, cite as image 1, image 2, … in the imagePrompt when needed):
+- Image 1: primary athlete — preserve identity; integrate into the layout.
+${referenceImageCount >= 2 ? "- Image 2: home team logo or mark — render sharply; user responsible for trademark accuracy.\n" : ""}${referenceImageCount >= 3 ? "- Image 3: opponent team logo or mark — same as image 2.\n" : ""}`
+      : "";
 
   // ── Step 1: Build copy + image prompt ──────────────────────────────────────
   let copy: { title: string; tagline: string; imagePrompt: string };
@@ -346,6 +471,12 @@ export async function POST(req: NextRequest) {
       mood,
       refinements,
       orientationHint: formatConfig.orientationHint,
+      eventDate,
+      venue,
+      gameTime,
+      broadcastOrStreaming,
+      hashtag,
+      referenceImageCount,
     }),
   };
 
@@ -359,7 +490,7 @@ export async function POST(req: NextRequest) {
         ? `\nUser has requested these refinements (apply all of them):\n${refinements.map((r, i) => `${i + 1}. ${r}`).join("\n")}`
         : "";
 
-      const claudePrompt = `You are a creative director for a premium sports media brand. Generate assets for a ${assetLabel} graphic.
+      const claudePrompt = `You are a creative director for US college athletics social and print graphics. Generate assets for a ${assetLabel} piece.
 
 Details:
 - Sport: ${sport}
@@ -367,6 +498,10 @@ Details:
 - Away Team: ${awayTeam}
 ${scoreInfo ? `- ${scoreInfo}` : ""}
 ${dateInfo ? `- ${dateInfo}` : ""}
+${venueInfo ? `- ${venueInfo}` : ""}
+${timeInfo ? `- ${timeInfo}` : ""}
+${broadcastInfo ? `- ${broadcastInfo}` : ""}
+${hashtagInfo ? `- ${hashtagInfo}` : ""}
 - Visual Style: ${style}
 - Style Reference: ${styleDesc}
 - Sport Environment: ${SPORT_ENVIRONMENTS[sport] ?? `${sport} arena`}
@@ -376,12 +511,13 @@ ${composition ? `- Composition: ${composition}` : ""}
 ${lighting ? `- Lighting: ${lighting}` : ""}
 ${mood ? `- Energy/Mood Override: ${mood}` : ""}
 ${customPrompt ? `- Creative Direction: ${customPrompt}` : ""}${refinementNote}
+${referenceInstructions}
 
 Return a JSON object with exactly these fields (no markdown, raw JSON only):
 {
   "title": "Short punchy headline, max 6 words, all caps, hype energy",
   "tagline": "Supporting slogan or matchup line, max 12 words",
-  "imagePrompt": "A highly detailed DALL-E 3 image generation prompt. Must incorporate: the full style descriptor, sport environment, composition guidance, team color atmosphere, mood, and ALL user refinements. Include mascot or team animal if relevant. NO readable text, numbers, or legible words in the image. End with: no text, no words, digital art, sports poster."
+  "imagePrompt": "A single detailed FLUX.2 Pro image generation prompt for a college athletics poster or social graphic. Must incorporate: the full style descriptor, sport environment, composition, team color atmosphere, mood, and ALL user refinements. Include legible typography with EXACT correct spelling for the two school/team names (${homeTeam} vs ${awayTeam})${eventDate ? ` and the date (${eventDate})` : ""}${venue ? `; include venue (${venue}) if space allows` : ""}${gameTime ? `; include game time (${gameTime}) if suitable` : ""}${broadcastOrStreaming ? `; you may add a small broadcast/stream line: ${broadcastOrStreaming}` : ""}${hashtag ? `; optionally include hashtag ${hashtag}` : ""}. Use a clear hierarchy (headline, subhead, details). If reference images are used, name them as image 1, image 2, etc., and tie instructions to those indices. Remind that the user is responsible for trademark/logo accuracy. Photoreal or illustrated is fine per style. End with: professional sports marketing layout, high contrast, social-ready."
 }`;
 
       const stream = anthropic.messages.stream({
@@ -427,7 +563,7 @@ Return a JSON object with exactly these fields (no markdown, raw JSON only):
         prompt: copy.imagePrompt,
         aspect_ratio: fluxFormat.aspect_ratio,
         resolution: fluxFormat.resolution,
-        input_images: [],
+        input_images: sanitizedRefs,
         output_format: "webp",
         output_quality: 85,
         safety_tolerance: 2,

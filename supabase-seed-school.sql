@@ -10,7 +10,7 @@ insert into public.schools (id, name, manager_id)
 values (
   gen_random_uuid(),
   'Ridgeline High',
-  'YOUR_MANAGER_USER_UID'::uuid
+  'YOUR_MANAGER_USER_UID'::1d74ff29-fce5-4b51-aea1-b28667d8e97d
 )
 returning id, name, manager_id;
 
@@ -23,7 +23,7 @@ select
   'Football',
   '2025-2026'
 from public.schools s
-where s.manager_id = 'YOUR_MANAGER_USER_UID'::uuid
+where s.manager_id = 'YOUR_MANAGER_USER_UID'::1d74ff29-fce5-4b51-aea1-b28667d8e97d
 limit 1
 returning id, team_name, sport, season;
 
