@@ -5,6 +5,7 @@ import type { ImportedGameEvent } from "@/lib/schedule/parseCsv";
 type Client = SupabaseClient<Database>;
 
 export type ScheduleRow = Database["public"]["Tables"]["schedules"]["Row"];
+type ScheduleInsert = Database["public"]["Tables"]["schedules"]["Insert"];
 
 export async function replaceTeamScheduleFromImport(
   supabase: Client,
@@ -16,14 +17,14 @@ export async function replaceTeamScheduleFromImport(
   const { error: delErr } = await supabase.from("schedules").delete().eq("team_id", teamId);
   if (delErr) throw delErr;
 
-  const payload = events.map((ev) => ({
+  const payload: ScheduleInsert[] = events.map((ev) => ({
     team_id: teamId,
     opponent: ev.opponent,
     date_time: ev.dateTime ?? null,
     date_text: ev.dateText ?? null,
     time_text: ev.timeText ?? null,
     location: ev.location ?? null,
-    home_away: ev.homeAway ?? null,
+    home_away: (ev.homeAway === "home" || ev.homeAway === "away" || ev.homeAway === "neutral") ? ev.homeAway : null,
     updated_at: new Date().toISOString(),
   }));
 

@@ -78,7 +78,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
   const updates       = asset.updates ?? [];
 
   function handlePost() {
-    if (!updateText.trim() || !currentDesigner) return;
+    if (!updateText.trim() || !currentDesigner || !asset) return;
     setPosting(true);
     addUpdate(asset.id, updateText, currentDesigner);
     setUpdateText("");

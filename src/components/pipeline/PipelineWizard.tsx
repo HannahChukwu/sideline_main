@@ -137,7 +137,7 @@ export function PipelineWizard() {
         const events: GameEvent[] = rows.map((r) => ({
           id: r.id,
           opponent: r.opponent,
-          dateTime: r.date_time ?? undefined,
+          dateTime: r.date_time,
           dateText: r.date_text ?? undefined,
           timeText: r.time_text ?? undefined,
           location: r.location ?? undefined,
@@ -357,7 +357,7 @@ export function PipelineWizard() {
                   const converted: GameEvent[] = rows.map((r) => ({
                     id: r.id,
                     opponent: r.opponent,
-                    dateTime: r.date_time ?? undefined,
+                    dateTime: r.date_time,
                     dateText: r.date_text ?? undefined,
                     timeText: r.time_text ?? undefined,
                     location: r.location ?? undefined,
