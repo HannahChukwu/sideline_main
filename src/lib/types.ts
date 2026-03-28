@@ -1,12 +1,12 @@
 export type Role = "designer" | "athlete" | "student";
 
-export interface Profile {
+export type Profile = {
   id: string;
   role: Role;
   full_name: string | null;
   email: string | null;
   created_at: string;
-}
+};
 
 // Supabase generated types (minimal — expand as schema grows)
 export interface Database {
@@ -16,6 +16,7 @@ export interface Database {
         Row: Profile;
         Insert: Omit<Profile, "created_at"> & { created_at?: string };
         Update: Partial<Omit<Profile, "id">>;
+        Relationships: [];
       };
       assets: {
         Row: {
@@ -78,11 +79,13 @@ export interface Database {
           updated_at: string;
           published_at: string | null;
         }>;
+        Relationships: [];
       };
       asset_likes: {
         Row: { asset_id: string; user_id: string; created_at: string };
         Insert: { asset_id: string; user_id: string; created_at?: string };
         Update: never;
+        Relationships: [];
       };
       instagram_accounts: {
         Row: {
@@ -104,21 +107,25 @@ export interface Database {
           access_token_encrypted: string;
           updated_at: string;
         }>;
+        Relationships: [];
       };
       schools: {
         Row: { id: string; name: string; manager_id: string; created_at: string; updated_at: string };
         Insert: { id?: string; name: string; manager_id: string; created_at?: string; updated_at?: string };
         Update: Partial<{ name: string; manager_id: string; updated_at: string }>;
+        Relationships: [];
       };
       teams: {
         Row: { id: string; school_id: string; team_name: string; sport: string; season: string; created_at: string; updated_at: string };
         Insert: { id?: string; school_id: string; team_name: string; sport: string; season: string; created_at?: string; updated_at?: string };
         Update: Partial<{ school_id: string; team_name: string; sport: string; season: string; updated_at: string }>;
+        Relationships: [];
       };
       athletes: {
         Row: { id: string; team_id: string; full_name: string; number: string | null; position: string | null; created_at: string };
         Insert: { id?: string; team_id: string; full_name: string; number?: string | null; position?: string | null; created_at?: string };
         Update: Partial<{ team_id: string; full_name: string; number: string | null; position: string | null }>;
+        Relationships: [];
       };
       schedules: {
         Row: {
@@ -163,6 +170,7 @@ export interface Database {
           final: boolean;
           updated_at: string;
         }>;
+        Relationships: [];
       };
       manager_drafts: {
         Row: {
@@ -198,6 +206,7 @@ export interface Database {
           editor_layout: unknown;
           updated_at: string;
         }>;
+        Relationships: [];
       };
     };
     Views: Record<string, never>;
