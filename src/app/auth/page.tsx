@@ -68,6 +68,13 @@ function AuthForm() {
   }, [searchParams]);
 
   useEffect(() => {
+    const callbackError = searchParams.get("error");
+    if (callbackError === "callback_failed") {
+      setError("Google sign-in failed. Please try again.");
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     const rawRole = searchParams.get("role") as Role | null;
     if (rawRole && rawRole in ROLE_META) {
       setSelectedRole(rawRole);
@@ -93,11 +100,24 @@ function AuthForm() {
       return;
     }
 
+    const callbackUrl = new URL("/auth/callback", window.location.origin);
+    const next = searchParams.get("next");
+    if (next) callbackUrl.searchParams.set("next", next);
+    callbackUrl.searchParams.set("mode", mode);
+    document.cookie = `sideline_oauth_mode=${mode}; Path=/; Max-Age=600; SameSite=Lax`;
+
+    if (mode === "signup" && selectedRole) {
+      callbackUrl.searchParams.set("role", selectedRole);
+      document.cookie = `sideline_oauth_role=${selectedRole}; Path=/; Max-Age=600; SameSite=Lax`;
+    } else {
+      document.cookie = "sideline_oauth_role=; Path=/; Max-Age=0; SameSite=Lax";
+    }
+
     const supabase = createClient();
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: callbackUrl.toString(),
       },
     });
 
