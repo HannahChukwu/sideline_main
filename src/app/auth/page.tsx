@@ -118,6 +118,11 @@ function AuthForm() {
       provider: "google",
       options: {
         redirectTo: callbackUrl.toString(),
+        // Always show Google’s account chooser so users can pick or add an account
+        // (otherwise Google may sign in silently with the last-used session).
+        queryParams: {
+          prompt: "select_account",
+        },
       },
     });
 
