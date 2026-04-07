@@ -73,6 +73,7 @@ Enable Google in Supabase → Authentication → Providers and set redirect URL 
 
 ## Repo structure (high level)
 
+- `ARCHITECTURE.md`: system architecture (stack, data model, APIs, security)
 - `src/app/`: routes (`auth`, `designer`, `athlete`, `feed`, `settings`, plus `manager/*`)
 - `src/components/`: UI, navbar, editor/pipeline components
 - `src/lib/`: supabase clients, types, feed/assets helpers, pipeline/editor helpers

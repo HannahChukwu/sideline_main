@@ -2,7 +2,7 @@
 
 This document describes how **Sideline Studio** is put together: the product surfaces, the Next.js application structure, Supabase as the system of record, and the main integrations.
 
-For database setup steps, see [SUPABASE_SETUP.md](./SUPABASE_SETUP.md).
+For database setup steps, see [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md).
 
 ---
 
@@ -218,5 +218,5 @@ Typical variables (names only; values belong in `.env.local` — not committed):
 
 ## 12. Related documents
 
-- [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) — project setup against Supabase.
-- Root **[README.md](../README.md)** — quickstart, role routing summary, and repo map.
+- [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md) — project setup against Supabase.
+- [README.md](README.md) — quickstart, role routing summary, and repo map.
