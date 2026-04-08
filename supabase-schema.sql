@@ -425,12 +425,64 @@ create policy "Authenticated delete own generation-references"
   );
 
 -- ============================================================
+-- STORAGE — Archived AI-generated posters (stable public URLs)
+-- Path convention: {auth.uid()}/{uuid}.{ext}
+-- Separate from generation-references (reference uploads only).
+-- ============================================================
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'generated-posters',
+  'generated-posters',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Public read generated-posters" on storage.objects;
+create policy "Public read generated-posters"
+  on storage.objects for select
+  using (bucket_id = 'generated-posters');
+
+drop policy if exists "Authenticated insert own generated-posters" on storage.objects;
+create policy "Authenticated insert own generated-posters"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'generated-posters'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Authenticated update own generated-posters" on storage.objects;
+create policy "Authenticated update own generated-posters"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'generated-posters'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Authenticated delete own generated-posters" on storage.objects;
+create policy "Authenticated delete own generated-posters"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'generated-posters'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- ============================================================
 -- DONE. After running this:
 -- 1. Go to Authentication → Email Templates and customise if needed.
 -- 2. For local dev, disable email confirmation:
 --    Authentication → Settings → "Enable email confirmations" → OFF
 -- 3. Create at least one school row for your manager user so the
 --    manager workflow can attach teams/athletes/schedules to it.
--- 4. Storage: bucket generation-references holds designer reference uploads;
+-- 4. Storage: generation-references = reference uploads for FLUX; generated-posters =
+--    archived outputs from Save/Publish. Re-run storage sections if you add buckets later.
 --    ensure NEXT_PUBLIC_SUPABASE_URL in .env matches this project.
 -- ============================================================

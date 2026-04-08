@@ -1,7 +1,17 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  // Webpack resolves `cookie` for @supabase/ssr to a nested path that npm may not
+  // populate when deduping; force the hoisted install (see cookie@1.x for @supabase/ssr).
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      cookie: path.join(process.cwd(), "node_modules", "cookie"),
+    };
+    return config;
+  },
   images: {
     remotePatterns: [
       {

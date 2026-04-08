@@ -9,7 +9,10 @@ import { Navbar } from "@/components/layout/navbar";
 import { SPORTS, ASSET_TYPES, type AssetType } from "@/lib/mock-data";
 import { useAppStore } from "@/lib/store";
 import { createClient } from "@/lib/supabase/client";
-import { uploadGenerationReference } from "@/lib/supabase/referenceUpload";
+import {
+  uploadGenerationReference,
+  uploadGeneratedPosterFromUrl,
+} from "@/lib/supabase/referenceUpload";
 
 interface FormState {
   type: AssetType;
@@ -152,6 +155,8 @@ export default function CreateAsset() {
   const [isRefining, setIsRefining] = useState(false);
   const [designerName, setDesignerName] = useState("");
   const [saveState, setSaveState] = useState<null | "saving" | "published" | "draft">(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
   // Instagram integration state
   const [igConnected, setIgConnected] = useState<boolean | null>(null);
   const [igUserId, setIgUserId] = useState<string | null>(null);
@@ -163,6 +168,22 @@ export default function CreateAsset() {
   const addAsset          = useAppStore((s) => s.addAsset);
   const currentDesigner   = useAppStore((s) => s.currentDesigner);
   const supabase = useMemo(() => createClient(), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!cancelled) setSignedIn(Boolean(data.session?.user));
+    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSignedIn(Boolean(session?.user));
+    });
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   const isScoreType = form.type === "final-score";
 
@@ -382,12 +403,27 @@ export default function CreateAsset() {
   function regenerate() {
     setChatMessages([]);
     setSaveState(null);
+    setSaveError(null);
     generate([]);
   }
 
-  function saveAsset(status: "published" | "draft") {
+  async function saveAsset(status: "published" | "draft") {
     if (!generatedImage) return;
+    setSaveError(null);
     setSaveState("saving");
+    let imageUrl = generatedImage;
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const uid = userData.user?.id;
+      if (uid) {
+        imageUrl = await uploadGeneratedPosterFromUrl(supabase, uid, generatedImage);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not archive poster image.";
+      setSaveError(msg);
+      setSaveState(null);
+      return;
+    }
     addAsset({
       title: generatedTitle || `${form.homeTeam} vs ${form.awayTeam}`,
       tagline: generatedTagline || "",
@@ -399,7 +435,7 @@ export default function CreateAsset() {
       homeScore: form.homeScore ? Number(form.homeScore) : undefined,
       awayScore: form.awayScore ? Number(form.awayScore) : undefined,
       eventDate: form.eventDate || new Date().toISOString().split("T")[0],
-      imageUrl: generatedImage,
+      imageUrl,
       style: form.style,
       format: form.format,
       designerName: designerName.trim() || currentDesigner || "Designer",
@@ -1000,6 +1036,23 @@ export default function CreateAsset() {
                   {/* Save state: idle → form, saving → spinner, saved → success */}
                   {saveState === null && (
                     <>
+                      {saveError && (
+                        <p className="text-xs text-destructive mb-2" role="alert">
+                          {saveError}
+                        </p>
+                      )}
+                      {!saveError && signedIn && (
+                        <p className="text-[10px] text-muted-foreground/70 mb-2">
+                          A permanent copy is saved to your project storage so thumbnails won&apos;t break when the AI
+                          preview link expires.
+                        </p>
+                      )}
+                      {!saveError && !signedIn && (
+                        <p className="text-[10px] text-amber-500/85 mb-2">
+                          Sign in to archive the image to your project. If you save while signed out, only the temporary
+                          AI link is stored and the picture may disappear later.
+                        </p>
+                      )}
                       {/* Designer name */}
                       <input
                         type="text"
