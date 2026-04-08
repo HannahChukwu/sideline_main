@@ -201,7 +201,7 @@ After deploy, smoke-test sign-in, protected routes, and `/api/generate` (Replica
 - **There is no working path today** to link an Instagram Business account and publish a generated image from the app. The UI and API stubs are in the codebase for when Meta app credentials, OAuth redirects, and Graph API publishing are fully configured and tested.
 - Until then, designers should **download** generated assets and post manually to Instagram (or any channel).
 
-## NPM Scripts
+## NPM Scripts.
 
 - `npm run dev` - start local dev server
 - `npm run build` - production build
