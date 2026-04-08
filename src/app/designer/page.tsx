@@ -2,7 +2,19 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Plus, TrendingUp, Image as ImageIcon, Heart, CheckCircle, Pencil, FolderOpen, Calendar } from "lucide-react";
+import {
+  Plus,
+  TrendingUp,
+  Image as ImageIcon,
+  Heart,
+  CheckCircle,
+  Pencil,
+  FolderOpen,
+  Calendar,
+  Users,
+  Link2,
+  Loader2,
+} from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { AssetCard } from "@/components/designer/asset-card";
 import { useAppStore } from "@/lib/store";
@@ -18,8 +30,12 @@ export default function DesignerDashboard() {
   const [mounted, setMounted] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [editingName, setEditingName] = useState(false);
-  const [scheduleTeam, setScheduleTeam] = useState<Team | null>(null);
+  const [managerTeams, setManagerTeams] = useState<Team[]>([]);
+  const [scheduleForTeamId, setScheduleForTeamId] = useState<string | null>(null);
+  const [inviteTeamId, setInviteTeamId] = useState<string | null>(null);
   const [dashboardSchedule, setDashboardSchedule] = useState<ScheduleRow[]>([]);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState<string | null>(null);
 
   const assets            = useAppStore((s) => s.assets);
   const updateStatus      = useAppStore((s) => s.updateStatus);
@@ -35,17 +51,24 @@ export default function DesignerDashboard() {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session?.user || cancelled) return;
       getTeamsForManager(supabase)
-        .then(async (teams) => {
-          if (cancelled || teams.length === 0) return;
-          const t = teams[0];
-          setScheduleTeam(t);
-          const rows = await getSchedulesForTeam(supabase, t.id);
-          if (!cancelled) setDashboardSchedule(rows);
+        .then((teams) => {
+          if (cancelled) return;
+          if (teams.length === 0) {
+            setManagerTeams([]);
+            setScheduleForTeamId(null);
+            setInviteTeamId(null);
+            return;
+          }
+          setManagerTeams(teams);
+          const firstId = teams[0].id;
+          setScheduleForTeamId(firstId);
+          setInviteTeamId(firstId);
         })
         .catch(() => {
           if (!cancelled) {
-            setScheduleTeam(null);
-            setDashboardSchedule([]);
+            setManagerTeams([]);
+            setScheduleForTeamId(null);
+            setInviteTeamId(null);
           }
         });
     });
@@ -53,6 +76,52 @@ export default function DesignerDashboard() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!scheduleForTeamId) {
+      setDashboardSchedule([]);
+      return;
+    }
+    const supabase = createClient();
+    getSchedulesForTeam(supabase, scheduleForTeamId)
+      .then((rows) => {
+        if (!cancelled) setDashboardSchedule(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setDashboardSchedule([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [scheduleForTeamId]);
+
+  const scheduleTeam = managerTeams.find((t) => t.id === scheduleForTeamId) ?? null;
+
+  async function copyAthleteInvite() {
+    if (!inviteTeamId) return;
+    setInviteBusy(true);
+    setInviteMsg(null);
+    try {
+      const res = await fetch("/api/team-invite", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ team_id: inviteTeamId }),
+      });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok) {
+        throw new Error(typeof data.error === "string" ? data.error : "Could not create invite link.");
+      }
+      if (!data.url) throw new Error("Missing URL in response.");
+      await navigator.clipboard.writeText(data.url);
+      setInviteMsg("Copied. Link expires in 14 days. Recipients sign in as athletes and open the link.");
+    } catch (e) {
+      setInviteMsg(e instanceof Error ? e.message : "Could not copy link.");
+    } finally {
+      setInviteBusy(false);
+    }
+  }
 
   // My assets only
   const myAssets  = mounted && currentDesigner
@@ -183,17 +252,97 @@ export default function DesignerDashboard() {
           </div>
         </div>
 
-        {mounted && scheduleTeam && (
-          <div className="rounded-xl border border-border/50 bg-card p-5 mb-10">
-            <div className="flex items-center gap-2 mb-4">
-              <Calendar className="w-4 h-4 text-primary shrink-0" />
-              <h2 className="text-sm font-semibold text-foreground">Team schedule</h2>
+        {mounted && managerTeams.length > 0 && (
+          <div className="rounded-xl border border-border/50 bg-card p-5 mb-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-primary shrink-0" />
+              <h2 className="text-sm font-semibold text-foreground">Your school teams</h2>
               <Link
                 href="/manager"
                 className="ml-auto text-xs font-medium text-primary hover:text-primary/80 hover:underline"
               >
-                Import / edit in Manager
+                Open Manager
               </Link>
+            </div>
+            <ul className="text-sm text-foreground/90 space-y-1.5">
+              {managerTeams.map((t) => (
+                <li key={t.id}>
+                  <span className="text-muted-foreground">·</span>{" "}
+                  {[t.schoolName, t.teamName].filter(Boolean).join(" · ") || t.teamName}
+                  <span className="text-muted-foreground"> — {t.sport}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="pt-3 border-t border-border/40 space-y-2">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <span className="font-semibold text-foreground/80">Athlete invite.</span> Creates a signed link
+                (HMAC, 14-day expiry). Athletes sign in, open the link, and their account is linked to the selected
+                team.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                {managerTeams.length > 1 && (
+                  <select
+                    value={inviteTeamId ?? ""}
+                    onChange={(e) => setInviteTeamId(e.target.value || null)}
+                    className="w-full sm:w-auto px-3 py-2.5 rounded-xl bg-background border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/40"
+                  >
+                    {managerTeams.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {[t.schoolName, t.teamName].filter(Boolean).join(" · ") || t.teamName}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void copyAthleteInvite()}
+                  disabled={inviteBusy || !inviteTeamId}
+                  className={cn(
+                    "inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all",
+                    inviteTeamId && !inviteBusy
+                      ? "bg-primary/15 border-primary/30 text-primary hover:bg-primary/20"
+                      : "bg-muted/30 border-border/50 text-muted-foreground cursor-not-allowed"
+                  )}
+                >
+                  {inviteBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                  Copy athlete invite link
+                </button>
+              </div>
+              {inviteMsg && (
+                <p className="text-xs text-muted-foreground leading-relaxed">{inviteMsg}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {mounted && scheduleTeam && (
+          <div className="rounded-xl border border-border/50 bg-card p-5 mb-10">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-primary shrink-0" />
+                <h2 className="text-sm font-semibold text-foreground">Team schedule</h2>
+              </div>
+              <div className="flex items-center gap-2 sm:ml-auto">
+                {managerTeams.length > 1 && (
+                  <select
+                    value={scheduleForTeamId ?? ""}
+                    onChange={(e) => setScheduleForTeamId(e.target.value || null)}
+                    className="px-3 py-2 rounded-lg bg-background border border-border/50 text-xs text-foreground focus:outline-none focus:border-primary/40 max-w-[220px]"
+                  >
+                    {managerTeams.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.teamName}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <Link
+                  href="/manager"
+                  className="text-xs font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
+                >
+                  Import / edit in Manager
+                </Link>
+              </div>
             </div>
             {dashboardSchedule.length === 0 ? (
               <p className="text-xs text-muted-foreground leading-relaxed">
@@ -203,7 +352,7 @@ export default function DesignerDashboard() {
             ) : (
               <>
                 <p className="text-[11px] text-muted-foreground mb-3">
-                  {[scheduleTeam.schoolName, scheduleTeam.teamName].filter(Boolean).join(" · ")} · next up
+                  {[scheduleTeam.schoolName, scheduleTeam.teamName].filter(Boolean).join(" · ")} · upcoming
                 </p>
                 <ul className="space-y-2">
                   {dashboardSchedule.slice(0, 10).map((row) => (

@@ -6,15 +6,42 @@ import { Heart, Trophy, Star, BarChart2 } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { AssetCard } from "@/components/designer/asset-card";
 import { useAppStore } from "@/lib/store";
+import { createClient } from "@/lib/supabase/client";
+import { fetchProfileTeamId } from "@/lib/supabase/profile";
+import { getTeamDisplayForViewer } from "@/lib/supabase/teams";
 
 export default function AthleteDashboard() {
   const [mounted, setMounted] = useState(false);
+  const [linkedTeamLabel, setLinkedTeamLabel] = useState<string | null>(null);
 
   const assets     = useAppStore((s) => s.assets);
   const toggleLike = useAppStore((s) => s.toggleLike);
   const isLiked    = useAppStore((s) => s.isLiked);
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data }) => {
+      const uid = data.session?.user?.id;
+      if (!uid || cancelled) return;
+      fetchProfileTeamId(supabase, uid)
+        .then(async (teamId) => {
+          if (!teamId || cancelled) return;
+          const row = await getTeamDisplayForViewer(supabase, teamId);
+          if (cancelled || !row) return;
+          const label = [row.schoolName, row.teamName].filter(Boolean).join(" · ") || row.teamName;
+          setLinkedTeamLabel(label);
+        })
+        .catch(() => {
+          if (!cancelled) setLinkedTeamLabel(null);
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const published    = mounted ? assets.filter((a) => a.status === "published") : [];
   const likedAssets  = mounted ? published.filter((a) => isLiked(a.id))  : [];
@@ -36,10 +63,14 @@ export default function AthleteDashboard() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20">
-                <Trophy className="w-3.5 h-3.5 text-blue-400" />
-                <span className="text-xs font-medium text-blue-400">Falcons Athletics</span>
-              </div>
+              {linkedTeamLabel && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 max-w-[200px] sm:max-w-[280px]">
+                  <Trophy className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span className="text-xs font-medium text-blue-400 truncate" title={linkedTeamLabel}>
+                    {linkedTeamLabel}
+                  </span>
+                </div>
+              )}
               <Link
                 href="/athlete/stats"
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"

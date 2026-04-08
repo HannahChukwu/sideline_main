@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { fetchProfileTeamId, updateProfileTeamId } from "@/lib/supabase/profile";
 import { getSchedulesForTeam, type ScheduleRow } from "@/lib/supabase/schedules";
+import { getTeamDisplayForViewer } from "@/lib/supabase/teams";
 import type { Team } from "@/lib/pipeline/types";
 import { formatScheduleRowOptionLabel } from "@/lib/schedule/applyScheduleToForm";
 import { useAppStore, STAT_PRESETS, EMPTY_ATHLETE_PROFILE } from "@/lib/store";
@@ -132,6 +133,7 @@ export default function AthleteStatsPage() {
   const [athleteSchedule, setAthleteSchedule] = useState<ScheduleRow[]>([]);
   const [athleteScheduleErr, setAthleteScheduleErr] = useState<string | null>(null);
   const [teamLinkSaveErr, setTeamLinkSaveErr] = useState<string | null>(null);
+  const [linkedOfficialTeamLabel, setLinkedOfficialTeamLabel] = useState<string | null>(null);
 
   const athleteProfile  = useAppStore((s) => s.athleteProfile);
   const setAthleteProfile = useAppStore((s) => s.setAthleteProfile);
@@ -182,6 +184,28 @@ export default function AthleteStatsPage() {
           setAthleteSchedule([]);
           setAthleteScheduleErr(e instanceof Error ? e.message : "Could not load schedule");
         }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileTeamId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!profileTeamId) {
+      setLinkedOfficialTeamLabel(null);
+      return;
+    }
+    const supabase = createClient();
+    getTeamDisplayForViewer(supabase, profileTeamId)
+      .then((row) => {
+        if (cancelled || !row) return;
+        setLinkedOfficialTeamLabel(
+          [row.schoolName, row.teamName].filter(Boolean).join(" · ") || row.teamName
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setLinkedOfficialTeamLabel(null);
       });
     return () => {
       cancelled = true;
@@ -418,17 +442,17 @@ export default function AthleteStatsPage() {
                   {authUserId && (
                     <div className="pt-2 border-t border-white/10">
                       <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
-                        Team schedule link (optional)
+                        Official team (advanced)
                       </label>
                       <input
                         value={teamLinkDraft}
                         onChange={(e) => setTeamLinkDraft(e.target.value)}
-                        placeholder="Team UUID from your coach (same as dashboard schedule)"
+                        placeholder="Team UUID — only if you don’t use the invite link"
                         className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-foreground/25 focus:outline-none focus:border-primary/40 transition-colors font-mono text-xs"
                       />
                       <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
-                        Sign in, then paste the team ID your manager uses in Manager → Schedule. That unlocks the official
-                        game list below for your account.
+                        Prefer the invite link from your designer (Designer portal → Copy athlete invite link). You can
+                        paste a raw team UUID here only if needed.
                       </p>
                       {teamLinkSaveErr && (
                         <p className="text-[10px] text-destructive mt-1">{teamLinkSaveErr}</p>
@@ -456,6 +480,12 @@ export default function AthleteStatsPage() {
                     {profile.team && <span>{profile.team}</span>}
                     {profile.year && <span>{profile.year}</span>}
                   </div>
+                  {authUserId && linkedOfficialTeamLabel && (
+                    <p className="mt-3 text-xs rounded-lg border border-primary/25 bg-primary/[0.07] px-3 py-2 text-foreground/90">
+                      <span className="font-semibold text-primary">Linked for schedule:</span>{" "}
+                      {linkedOfficialTeamLabel}
+                    </p>
+                  )}
                   {profile.bio && (
                     <p className="mt-3 text-sm text-muted-foreground/70 leading-relaxed">{profile.bio}</p>
                   )}
@@ -504,8 +534,9 @@ export default function AthleteStatsPage() {
           )}
 
           {authUserId && !profileTeamId && !editing && hasProfile && (
-            <p className="text-xs text-muted-foreground px-1">
-              Link your team under Edit Profile → Team schedule link to see official games imported by your school.
+            <p className="text-xs text-muted-foreground px-1 leading-relaxed">
+              Open the invite link from your designer (Designer portal → Copy athlete invite link), or use Edit Profile
+              → Official team to paste a UUID.
             </p>
           )}
 

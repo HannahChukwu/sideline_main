@@ -9,6 +9,11 @@ import { cn } from "@/lib/utils";
 import type { Role } from "@/lib/types";
 import { ROLE_ROUTES } from "@/lib/types";
 
+function safeInternalNext(path: string | null): string | null {
+  if (!path || !path.startsWith("/") || path.startsWith("//")) return null;
+  return path;
+}
+
 // ─── Role metadata ────────────────────────────────────────────────────────────
 
 const ROLE_META: Record<Role, { label: string; description: string; icon: React.ReactNode; color: string }> = {
@@ -173,7 +178,8 @@ function AuthForm() {
 
         if (data.session) {
           // Email confirmation disabled → signed in immediately
-          router.push(selectedRole ? ROLE_ROUTES[selectedRole] : "/");
+          const next = safeInternalNext(searchParams.get("next"));
+          router.push(next ?? (selectedRole ? ROLE_ROUTES[selectedRole] : "/"));
           router.refresh();
         } else {
           // Confirmation email sent
@@ -219,6 +225,13 @@ function AuthForm() {
         } = await supabaseFresh.auth.getUser();
 
         if (signedInUser) {
+          const next = safeInternalNext(searchParams.get("next"));
+          if (next) {
+            router.push(next);
+            router.refresh();
+            return;
+          }
+
           const { data: profile } = await supabaseFresh
             .from("profiles")
             .select("role")

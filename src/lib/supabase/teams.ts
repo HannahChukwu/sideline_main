@@ -32,3 +32,30 @@ export async function getTeamsForManager(
     season: row.season,
   }));
 }
+
+export type TeamDisplay = {
+  id: string;
+  schoolName: string;
+  teamName: string;
+  sport: string;
+  season: string;
+};
+
+/** Name row for dashboards; allowed by RLS for managers and for athletes linked via profiles.team_id. */
+export async function getTeamDisplayForViewer(supabase: Client, teamId: string): Promise<TeamDisplay | null> {
+  const { data, error } = await supabase
+    .from("teams")
+    .select("id, team_name, sport, season, schools(name)")
+    .eq("id", teamId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  const row = data as unknown as TeamRow;
+  return {
+    id: row.id,
+    schoolName: row.schools?.name ?? "",
+    teamName: row.team_name,
+    sport: row.sport,
+    season: row.season,
+  };
+}

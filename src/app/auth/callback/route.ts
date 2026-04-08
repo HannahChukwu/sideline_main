@@ -14,6 +14,11 @@ function oauthModeFromValue(value: string | null | undefined): "signin" | "signu
   return null;
 }
 
+function safeInternalNext(path: string | null): string | null {
+  if (!path || !path.startsWith("/") || path.startsWith("//")) return null;
+  return path;
+}
+
 function readCookieValue(cookieHeader: string | null, name: string): string | null {
   if (!cookieHeader) return null;
   const pairs = cookieHeader.split(";").map((part) => part.trim());
@@ -97,7 +102,7 @@ export async function GET(request: Request) {
 
         const resolvedRole: Role = intendedRole ?? existingRole ?? fallbackRole;
 
-        const destination = next ?? ROLE_ROUTES[resolvedRole];
+        const destination = safeInternalNext(next) ?? ROLE_ROUTES[resolvedRole];
         const response = NextResponse.redirect(`${origin}${destination}`);
         response.cookies.set("sideline_oauth_role", "", { path: "/", maxAge: 0 });
         response.cookies.set("sideline_oauth_mode", "", { path: "/", maxAge: 0 });

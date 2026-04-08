@@ -162,6 +162,20 @@ create policy "Managers can manage own school"
   on public.schools for all
   using (manager_id = auth.uid());
 
+drop policy if exists "Members can read school for linked team" on public.schools;
+create policy "Members can read school for linked team"
+  on public.schools for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.teams t
+      join public.profiles p on p.team_id = t.id
+      where p.id = auth.uid()
+        and t.school_id = schools.id
+    )
+  );
+
 alter table public.teams enable row level security;
 
 drop policy if exists "Managers can manage teams for own school" on public.teams;
@@ -170,6 +184,17 @@ create policy "Managers can manage teams for own school"
   using (
     school_id in (
       select id from public.schools where manager_id = auth.uid()
+    )
+  );
+
+drop policy if exists "Members can read linked team" on public.teams;
+create policy "Members can read linked team"
+  on public.teams for select
+  to authenticated
+  using (
+    id in (
+      select team_id from public.profiles
+      where id = auth.uid() and team_id is not null
     )
   );
 
@@ -502,4 +527,6 @@ create policy "Authenticated delete own generated-posters"
 -- 4. Storage: generation-references = reference uploads for FLUX; generated-posters =
 --    archived outputs from Save/Publish. Re-run storage sections if you add buckets later.
 --    ensure NEXT_PUBLIC_SUPABASE_URL in .env matches this project.
+-- 5. Athlete invite links (app, not DB): set TEAM_INVITE_SECRET in .env (16+ random chars)
+--    so /api/team-invite can sign tokens. Without it, mint returns 503 in production.
 -- ============================================================
