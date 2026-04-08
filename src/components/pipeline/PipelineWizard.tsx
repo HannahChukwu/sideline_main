@@ -238,7 +238,7 @@ export function PipelineWizard() {
             Build a post in minutes
           </h1>
           <p className="text-sm text-muted-foreground mt-2 max-w-xl">
-            Select a team, choose featured athletes, import a schedule CSV, then assemble an AI-ready post draft you can edit.
+            Select a team, choose featured athletes, import a schedule (Excel or CSV), then assemble an AI-ready post draft you can edit.
           </p>
         </div>
 

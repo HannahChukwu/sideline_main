@@ -5,6 +5,8 @@ export type Profile = {
   role: Role;
   full_name: string | null;
   email: string | null;
+  /** When set (usually for athletes), RLS allows reading `schedules` for this team. */
+  team_id: string | null;
   created_at: string;
 };
 
@@ -14,7 +16,7 @@ export interface Database {
     Tables: {
       profiles: {
         Row: Profile;
-        Insert: Omit<Profile, "created_at"> & { created_at?: string };
+        Insert: Omit<Profile, "created_at" | "team_id"> & { created_at?: string; team_id?: string | null };
         Update: Partial<Omit<Profile, "id">>;
         Relationships: [];
       };

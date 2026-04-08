@@ -2,17 +2,24 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Plus, TrendingUp, Image as ImageIcon, Heart, CheckCircle, Pencil, FolderOpen } from "lucide-react";
+import { Plus, TrendingUp, Image as ImageIcon, Heart, CheckCircle, Pencil, FolderOpen, Calendar } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { AssetCard } from "@/components/designer/asset-card";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
+import { getTeamsForManager } from "@/lib/supabase/teams";
+import { getSchedulesForTeam, type ScheduleRow } from "@/lib/supabase/schedules";
+import type { Team } from "@/lib/pipeline/types";
+import { formatScheduleRowOptionLabel } from "@/lib/schedule/applyScheduleToForm";
 
 export default function DesignerDashboard() {
   const [filter, setFilter] = useState<"all" | "published" | "draft">("all");
   const [mounted, setMounted] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [editingName, setEditingName] = useState(false);
+  const [scheduleTeam, setScheduleTeam] = useState<Team | null>(null);
+  const [dashboardSchedule, setDashboardSchedule] = useState<ScheduleRow[]>([]);
 
   const assets            = useAppStore((s) => s.assets);
   const updateStatus      = useAppStore((s) => s.updateStatus);
@@ -21,6 +28,31 @@ export default function DesignerDashboard() {
   const setCurrentDesigner = useAppStore((s) => s.setCurrentDesigner);
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session?.user || cancelled) return;
+      getTeamsForManager(supabase)
+        .then(async (teams) => {
+          if (cancelled || teams.length === 0) return;
+          const t = teams[0];
+          setScheduleTeam(t);
+          const rows = await getSchedulesForTeam(supabase, t.id);
+          if (!cancelled) setDashboardSchedule(rows);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setScheduleTeam(null);
+            setDashboardSchedule([]);
+          }
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // My assets only
   const myAssets  = mounted && currentDesigner
@@ -150,6 +182,50 @@ export default function DesignerDashboard() {
             </Link>
           </div>
         </div>
+
+        {mounted && scheduleTeam && (
+          <div className="rounded-xl border border-border/50 bg-card p-5 mb-10">
+            <div className="flex items-center gap-2 mb-4">
+              <Calendar className="w-4 h-4 text-primary shrink-0" />
+              <h2 className="text-sm font-semibold text-foreground">Team schedule</h2>
+              <Link
+                href="/manager"
+                className="ml-auto text-xs font-medium text-primary hover:text-primary/80 hover:underline"
+              >
+                Import / edit in Manager
+              </Link>
+            </div>
+            {dashboardSchedule.length === 0 ? (
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                No games loaded yet. Open Manager → Schedule and upload your athletics site Excel or CSV export
+                once; it will show here and in Generate Poster.
+              </p>
+            ) : (
+              <>
+                <p className="text-[11px] text-muted-foreground mb-3">
+                  {[scheduleTeam.schoolName, scheduleTeam.teamName].filter(Boolean).join(" · ")} · next up
+                </p>
+                <ul className="space-y-2">
+                  {dashboardSchedule.slice(0, 10).map((row) => (
+                    <li
+                      key={row.id}
+                      className="flex items-start justify-between gap-3 text-sm border-b border-border/30 pb-2 last:border-0 last:pb-0"
+                    >
+                      <span className="text-foreground/90 min-w-0">
+                        {formatScheduleRowOptionLabel(scheduleTeam, row)}
+                      </span>
+                      {row.final && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
+                          Final
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">

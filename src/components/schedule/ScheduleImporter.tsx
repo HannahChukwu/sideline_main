@@ -93,7 +93,10 @@ export function ScheduleImporter({ onImport }: Props) {
           Import schedule
         </CardTitle>
         <CardDescription>
-          Upload a <span className="font-semibold text-foreground/70">.csv</span> export or paste CSV text. Works across schools without relying on a specific website format.
+          Upload a <span className="font-semibold text-foreground/70">.csv</span> or Excel{" "}
+          (<span className="font-semibold text-foreground/70">.xlsx</span>,{" "}
+          <span className="font-semibold text-foreground/70">.xls</span>) export from your athletics site, or paste CSV
+          text. The first worksheet is used for Excel files.
         </CardDescription>
       </CardHeader>
 
@@ -102,7 +105,7 @@ export function ScheduleImporter({ onImport }: Props) {
           <TabsList>
             <TabsTrigger value="upload">
               <Upload className="w-4 h-4" />
-              Upload CSV
+              Upload file
             </TabsTrigger>
             <TabsTrigger value="paste">
               <Clipboard className="w-4 h-4" />
@@ -114,10 +117,35 @@ export function ScheduleImporter({ onImport }: Props) {
             <div className="flex flex-col gap-2">
               <Input
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
+                  const lower = file.name.toLowerCase();
+                  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+                    try {
+                      const { parseExcelBufferToCsvShape } = await import("@/lib/schedule/parseExcel");
+                      const { headers, rows } = await parseExcelBufferToCsvShape(await file.arrayBuffer());
+                      if (headers.length === 0) {
+                        setParseState({
+                          kind: "error",
+                          message: "Couldn’t read headers from the spreadsheet. Make sure the first row has column titles.",
+                        });
+                        return;
+                      }
+                      if (rows.length === 0) {
+                        setParseState({ kind: "error", message: "Spreadsheet has headers but no data rows." });
+                        return;
+                      }
+                      setParseState({ kind: "parsed", headers, rows });
+                      setMapping(guessColumnMapping(headers));
+                      setFileName(file.name);
+                    } catch (err) {
+                      const message = err instanceof Error ? err.message : "Failed to parse Excel file.";
+                      setParseState({ kind: "error", message });
+                    }
+                    return;
+                  }
                   const text = await file.text();
                   handleParse(text, file.name);
                 }}

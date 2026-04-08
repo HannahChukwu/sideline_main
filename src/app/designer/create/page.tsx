@@ -13,6 +13,10 @@ import {
   uploadGenerationReference,
   uploadGeneratedPosterFromUrl,
 } from "@/lib/supabase/referenceUpload";
+import { getTeamsForManager } from "@/lib/supabase/teams";
+import { getSchedulesForTeam, type ScheduleRow } from "@/lib/supabase/schedules";
+import type { Team } from "@/lib/pipeline/types";
+import { applyScheduleRowToPosterForm, formatScheduleRowOptionLabel } from "@/lib/schedule/applyScheduleToForm";
 
 interface FormState {
   type: AssetType;
@@ -157,6 +161,11 @@ export default function CreateAsset() {
   const [saveState, setSaveState] = useState<null | "saving" | "published" | "draft">(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(false);
+  const [managerTeams, setManagerTeams] = useState<Team[]>([]);
+  const [scheduleTeamId, setScheduleTeamId] = useState<string | null>(null);
+  const [scheduleRows, setScheduleRows] = useState<ScheduleRow[]>([]);
+  const [schedulePickId, setSchedulePickId] = useState<string | null>(null);
+  const [scheduleLoadError, setScheduleLoadError] = useState<string | null>(null);
   // Instagram integration state
   const [igConnected, setIgConnected] = useState<boolean | null>(null);
   const [igUserId, setIgUserId] = useState<string | null>(null);
@@ -184,6 +193,55 @@ export default function CreateAsset() {
       subscription.unsubscribe();
     };
   }, [supabase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!signedIn) {
+      setManagerTeams([]);
+      return;
+    }
+    getTeamsForManager(supabase)
+      .then((list) => {
+        if (!cancelled) setManagerTeams(list);
+      })
+      .catch(() => {
+        if (!cancelled) setManagerTeams([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn, supabase]);
+
+  useEffect(() => {
+    if (managerTeams.length !== 1 || scheduleTeamId) return;
+    setScheduleTeamId(managerTeams[0].id);
+  }, [managerTeams, scheduleTeamId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!scheduleTeamId) {
+      setScheduleRows([]);
+      setSchedulePickId(null);
+      setScheduleLoadError(null);
+      return;
+    }
+    getSchedulesForTeam(supabase, scheduleTeamId)
+      .then((rows) => {
+        if (!cancelled) {
+          setScheduleRows(rows);
+          setScheduleLoadError(null);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setScheduleRows([]);
+          setScheduleLoadError(e instanceof Error ? e.message : "Could not load schedule");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [scheduleTeamId, supabase]);
 
   const isScoreType = form.type === "final-score";
 
@@ -543,6 +601,84 @@ export default function CreateAsset() {
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20 text-xs text-amber-400">
                 <FlaskConical className="w-3.5 h-3.5 shrink-0" />
                 Dev mode — generation uses a placeholder poster instantly. No API calls.
+              </div>
+            )}
+
+            {step !== "result" && signedIn && managerTeams.length > 0 && (
+              <div className="rounded-xl border border-primary/25 bg-primary/[0.06] p-4 space-y-3">
+                <div>
+                  <p className="text-xs font-semibold text-foreground uppercase tracking-wider">Pick from schedule</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                    After you import the Excel or CSV schedule in{" "}
+                    <Link href="/manager" className="text-primary hover:underline">
+                      Manager
+                    </Link>
+                    , choose your team and a game to fill in match details (you can still edit them below).
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+                      Team
+                    </label>
+                    <select
+                      value={scheduleTeamId ?? ""}
+                      onChange={(e) => {
+                        const id = e.target.value || null;
+                        setScheduleTeamId(id);
+                        setSchedulePickId(null);
+                      }}
+                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/40"
+                    >
+                      <option value="">Select team…</option>
+                      {managerTeams.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {[t.schoolName, t.teamName].filter(Boolean).join(" · ") || t.teamName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+                      Game
+                    </label>
+                    <select
+                      value={schedulePickId ?? ""}
+                      disabled={!scheduleTeamId || scheduleRows.length === 0}
+                      onChange={(e) => {
+                        const id = e.target.value || null;
+                        setSchedulePickId(id);
+                        if (!id || !scheduleTeamId) return;
+                        const team = managerTeams.find((t) => t.id === scheduleTeamId);
+                        const row = scheduleRows.find((r) => r.id === id);
+                        if (!team || !row) return;
+                        const patch = applyScheduleRowToPosterForm(team, row);
+                        setForm((f) => ({
+                          ...f,
+                          ...patch,
+                          type: row.final ? "final-score" : f.type === "final-score" ? "gameday" : f.type,
+                        }));
+                      }}
+                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/40 disabled:opacity-50"
+                    >
+                      <option value="">
+                        {!scheduleTeamId ? "Select a team first…" : scheduleRows.length === 0 ? "No games yet — import schedule in Manager" : "Select game…"}
+                      </option>
+                      {scheduleTeamId &&
+                        scheduleRows.map((row) => {
+                          const team = managerTeams.find((t) => t.id === scheduleTeamId)!;
+                          return (
+                            <option key={row.id} value={row.id}>
+                              {formatScheduleRowOptionLabel(team, row)}
+                            </option>
+                          );
+                        })}
+                    </select>
+                  </div>
+                </div>
+                {scheduleLoadError && (
+                  <p className="text-xs text-destructive">{scheduleLoadError}</p>
+                )}
               </div>
             )}
 

@@ -109,6 +109,9 @@ create table if not exists public.schedules (
   updated_at  timestamptz not null default now()
 );
 
+-- Optional: link signed-in athletes (profile) to a team so they can read the shared schedule (RLS below).
+alter table public.profiles add column if not exists team_id uuid references public.teams(id) on delete set null;
+
 -- Logos for schools/teams (stored in Supabase Storage; this table tracks paths)
 create table if not exists public.logos (
   id            uuid primary key default gen_random_uuid(),
@@ -195,6 +198,20 @@ create policy "Managers can manage schedules for own school"
       from public.teams t
       join public.schools s on t.school_id = s.id
       where s.manager_id = auth.uid()
+    )
+  );
+
+drop policy if exists "Athletes can view own team schedule" on public.schedules;
+create policy "Athletes can view own team schedule"
+  on public.schedules for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles p
+      where p.id = auth.uid()
+        and p.team_id is not null
+        and p.team_id = schedules.team_id
     )
   );
 

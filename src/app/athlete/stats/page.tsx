@@ -4,9 +4,14 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, BarChart2, Edit2, Check, Plus, Trash2,
-  User, Trophy, RefreshCw, Wifi, WifiOff, ChevronDown,
+  User, Trophy, RefreshCw, Wifi, WifiOff, ChevronDown, Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
+import { fetchProfileTeamId, updateProfileTeamId } from "@/lib/supabase/profile";
+import { getSchedulesForTeam, type ScheduleRow } from "@/lib/supabase/schedules";
+import type { Team } from "@/lib/pipeline/types";
+import { formatScheduleRowOptionLabel } from "@/lib/schedule/applyScheduleToForm";
 import { useAppStore, STAT_PRESETS, EMPTY_ATHLETE_PROFILE } from "@/lib/store";
 import type { StatRow, AthleteProfile } from "@/lib/store";
 import type { LiveGame } from "@/app/api/live-scores/route";
@@ -121,6 +126,12 @@ export default function AthleteStatsPage() {
   const [scoresLoading, setScoresLoading] = useState(true);
   const [scoresSource, setScoresSource] = useState<"ncaa" | "fallback" | null>(null);
   const [showSportPicker, setShowSportPicker] = useState(false);
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  const [profileTeamId, setProfileTeamId] = useState<string | null>(null);
+  const [teamLinkDraft, setTeamLinkDraft] = useState("");
+  const [athleteSchedule, setAthleteSchedule] = useState<ScheduleRow[]>([]);
+  const [athleteScheduleErr, setAthleteScheduleErr] = useState<string | null>(null);
+  const [teamLinkSaveErr, setTeamLinkSaveErr] = useState<string | null>(null);
 
   const athleteProfile  = useAppStore((s) => s.athleteProfile);
   const setAthleteProfile = useAppStore((s) => s.setAthleteProfile);
@@ -129,6 +140,53 @@ export default function AthleteStatsPage() {
   const [draft, setDraft] = useState<AthleteProfile>(EMPTY_ATHLETE_PROFILE);
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data }) => {
+      const uid = data.session?.user?.id ?? null;
+      if (cancelled) return;
+      setAuthUserId(uid);
+      if (!uid) return;
+      fetchProfileTeamId(supabase, uid)
+        .then((tid) => {
+          if (!cancelled) setProfileTeamId(tid);
+        })
+        .catch(() => {
+          if (!cancelled) setProfileTeamId(null);
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!profileTeamId) {
+      setAthleteSchedule([]);
+      setAthleteScheduleErr(null);
+      return;
+    }
+    const supabase = createClient();
+    getSchedulesForTeam(supabase, profileTeamId)
+      .then((rows) => {
+        if (!cancelled) {
+          setAthleteSchedule(rows);
+          setAthleteScheduleErr(null);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setAthleteSchedule([]);
+          setAthleteScheduleErr(e instanceof Error ? e.message : "Could not load schedule");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileTeamId]);
 
   // Fetch NCAA live scores for this athlete's sport
   useEffect(() => {
@@ -150,6 +208,8 @@ export default function AthleteStatsPage() {
 
   function startEdit() {
     setDraft({ ...athleteProfile, stats: athleteProfile.stats.map((r) => ({ ...r })) });
+    setTeamLinkDraft(profileTeamId ?? "");
+    setTeamLinkSaveErr(null);
     setEditing(true);
   }
 
@@ -158,10 +218,21 @@ export default function AthleteStatsPage() {
     setEditing(false);
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     setSaving(true);
+    setTeamLinkSaveErr(null);
     setAthleteProfile(draft);
-    setTimeout(() => { setSaving(false); setEditing(false); }, 500);
+    if (authUserId) {
+      try {
+        const supabase = createClient();
+        const raw = teamLinkDraft.trim();
+        await updateProfileTeamId(supabase, authUserId, raw === "" ? null : raw);
+        setProfileTeamId(raw === "" ? null : raw);
+      } catch (e) {
+        setTeamLinkSaveErr(e instanceof Error ? e.message : "Could not save team link.");
+      }
+    }
+    setTimeout(() => { setSaving(false); setEditing(false); }, 400);
   }
 
   function changeSport(sport: string) {
@@ -198,6 +269,16 @@ export default function AthleteStatsPage() {
     (g) => g.sport.toLowerCase() === (profile.sport ?? "").toLowerCase()
   );
   const hasProfile = !!(athleteProfile.name || athleteProfile.sport);
+
+  const scheduleTeamStub: Team | null = profileTeamId
+    ? {
+        id: profileTeamId,
+        schoolName: "",
+        teamName: profile.team || "My team",
+        sport: profile.sport || "",
+        season: "",
+      }
+    : null;
 
   if (!mounted) {
     return (
@@ -334,6 +415,26 @@ export default function AthleteStatsPage() {
                     rows={2}
                     className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-foreground/25 focus:outline-none focus:border-primary/40 resize-none transition-colors"
                   />
+                  {authUserId && (
+                    <div className="pt-2 border-t border-white/10">
+                      <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
+                        Team schedule link (optional)
+                      </label>
+                      <input
+                        value={teamLinkDraft}
+                        onChange={(e) => setTeamLinkDraft(e.target.value)}
+                        placeholder="Team UUID from your coach (same as dashboard schedule)"
+                        className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-foreground/25 focus:outline-none focus:border-primary/40 transition-colors font-mono text-xs"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                        Sign in, then paste the team ID your manager uses in Manager → Schedule. That unlocks the official
+                        game list below for your account.
+                      </p>
+                      {teamLinkSaveErr && (
+                        <p className="text-[10px] text-destructive mt-1">{teamLinkSaveErr}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : !hasProfile ? (
                 <div className="text-center py-6">
@@ -362,6 +463,51 @@ export default function AthleteStatsPage() {
               )}
             </div>
           </div>
+
+          {authUserId && scheduleTeamStub && (
+            <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-border/40">
+                <Calendar className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-sm font-bold text-foreground">Your team schedule</span>
+              </div>
+              <div className="px-4 py-4">
+                {athleteScheduleErr && (
+                  <p className="text-xs text-destructive">{athleteScheduleErr}</p>
+                )}
+                {!athleteScheduleErr && athleteSchedule.length === 0 && (
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    No games on file yet. When your designer uploads the schedule in Manager, games appear here
+                    automatically.
+                  </p>
+                )}
+                {!athleteScheduleErr && athleteSchedule.length > 0 && (
+                  <ul className="space-y-2">
+                    {athleteSchedule.slice(0, 12).map((row) => (
+                      <li
+                        key={row.id}
+                        className="flex items-start justify-between gap-2 text-sm border-b border-border/25 pb-2 last:border-0 last:pb-0"
+                      >
+                        <span className="text-foreground/90 min-w-0">
+                          {formatScheduleRowOptionLabel(scheduleTeamStub, row)}
+                        </span>
+                        {row.final && (
+                          <span className="text-[10px] font-semibold uppercase text-muted-foreground shrink-0">
+                            Final
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+
+          {authUserId && !profileTeamId && !editing && hasProfile && (
+            <p className="text-xs text-muted-foreground px-1">
+              Link your team under Edit Profile → Team schedule link to see official games imported by your school.
+            </p>
+          )}
 
           {/* Stats table */}
           <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
