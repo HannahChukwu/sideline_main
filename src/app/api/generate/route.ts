@@ -3,6 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import Replicate from "replicate";
 import { z } from "zod";
 import { GENERATION_REFERENCES_BUCKET } from "@/lib/supabase/referenceUpload";
+import { consumeGenerateRateLimit } from "@/lib/rate-limit/generateRateLimit";
+import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
 
 const RequestSchema = z.object({
   type: z.enum(["gameday", "final-score", "poster", "highlight"]),
@@ -398,9 +400,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: "Sign in required to generate." }, { status: 401 });
+  }
+
   const parsed = RequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const rl = await consumeGenerateRateLimit(user.id);
+  if (!rl.ok) {
+    if (rl.kind === "misconfigured") {
+      return NextResponse.json(
+        {
+          error:
+            "Generation service is misconfigured (rate limiting). Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.",
+        },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json(
+      { error: "Generation limit reached. Try again later." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } }
+    );
   }
 
   const {

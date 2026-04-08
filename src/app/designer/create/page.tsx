@@ -316,6 +316,17 @@ export default function CreateAsset() {
     }
 
     try {
+      if (!devMode) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session?.user) {
+          const msg = "Sign in to generate posters. Open /auth to continue.";
+          setGenerateError(msg);
+          if (isInitial) setStep("error");
+          setIsRefining(false);
+          return;
+        }
+      }
+
       const referenceImageUrls: string[] = [];
       if (refAthleteFile || refHomeLogoFile || refAwayLogoFile) {
         const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -345,6 +356,7 @@ export default function CreateAsset() {
 
       const res = await fetch("/api/generate", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: form.type,
@@ -369,17 +381,47 @@ export default function CreateAsset() {
           referenceImageUrls: referenceImageUrls.length > 0 ? referenceImageUrls : undefined,
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as {
+        error?: string | Record<string, unknown>;
+        imageUrl?: string;
+        title?: string;
+        tagline?: string;
+      };
       if (!res.ok) {
-        if (isInitial) {
-          setGenerateError(data.error ?? "Generation failed");
-          setStep("error");
+        let message: string;
+        if (res.status === 401) {
+          message = "Sign in to generate posters. Open /auth if you’re not signed in.";
+        } else if (res.status === 429) {
+          const retry = res.headers.get("Retry-After");
+          const base =
+            typeof data.error === "string"
+              ? data.error
+              : "Generation limit reached. Try again later.";
+          message = retry ? `${base} Retry in about ${retry}s.` : base;
+        } else if (res.status === 503) {
+          message =
+            typeof data.error === "string"
+              ? data.error
+              : "Service temporarily unavailable.";
+        } else if (typeof data.error === "string") {
+          message = data.error;
+        } else if (res.status === 400) {
+          message = "Invalid request — check required fields.";
+        } else {
+          message = "Generation failed";
         }
+        setGenerateError(message);
+        if (isInitial) setStep("error");
+        return;
+      }
+      if (!data.imageUrl) {
+        setGenerateError("Generation response missing image.");
+        if (isInitial) setStep("error");
         return;
       }
       setGeneratedImage(data.imageUrl);
-      setGeneratedTitle(data.title);
-      setGeneratedTagline(data.tagline);
+      setGeneratedTitle(data.title ?? "");
+      setGeneratedTagline(data.tagline ?? "");
       setStep("result");
     } catch {
       if (isInitial) {
@@ -392,7 +434,7 @@ export default function CreateAsset() {
   }
 
   async function sendChatMessage() {
-    if (!chatInput.trim() || isRefining) return;
+    if (!chatInput.trim() || isRefining || (!devMode && !signedIn)) return;
     const message = chatInput.trim();
     const updated = [...chatMessages, { role: "user" as const, content: message }];
     setChatMessages(updated);
@@ -401,6 +443,7 @@ export default function CreateAsset() {
   }
 
   function regenerate() {
+    if (!devMode && !signedIn) return;
     setChatMessages([]);
     setSaveState(null);
     setSaveError(null);
@@ -906,8 +949,10 @@ export default function CreateAsset() {
 
             {/* ── Generate Button ─── */}
             <button
+              type="button"
               onClick={() => generate([])}
-              disabled={step === "generating"}
+              disabled={step === "generating" || (!devMode && !signedIn)}
+              title={!devMode && !signedIn ? "Sign in to generate" : undefined}
               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold transition-all hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {step === "generating" ? (
@@ -943,8 +988,11 @@ export default function CreateAsset() {
                   </span>
                   {step === "result" && (
                     <button
+                      type="button"
                       onClick={regenerate}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted transition-all"
+                      disabled={!devMode && !signedIn}
+                      title={!devMode && !signedIn ? "Sign in to regenerate" : undefined}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <RefreshCw className="w-3 h-3" /> Regenerate
                     </button>
@@ -1181,12 +1229,13 @@ export default function CreateAsset() {
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") sendChatMessage(); }}
                       placeholder="Make the background darker, add more crowd energy…"
-                      disabled={isRefining}
+                      disabled={isRefining || (!devMode && !signedIn)}
                       className="flex-1 px-3 py-2 rounded-xl bg-muted/50 border border-border/50 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all disabled:opacity-50"
                     />
                     <button
+                      type="button"
                       onClick={sendChatMessage}
-                      disabled={!chatInput.trim() || isRefining}
+                      disabled={!chatInput.trim() || isRefining || (!devMode && !signedIn)}
                       className="px-3 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center"
                     >
                       <Send className="w-3.5 h-3.5" />

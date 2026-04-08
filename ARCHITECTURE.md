@@ -162,7 +162,8 @@ Reference uploads for generation use a dedicated bucket (see `GENERATION_REFEREN
 
 | Route | Role |
 |-------|------|
-| **`POST /api/generate`** | Validates body with Zod; builds prompts; calls **Replicate** (and related helpers); returns generated image URL. Sanitizes `referenceImageUrls` to Supabase public object URLs only. |
+| **`POST /api/generate`** | Requires **Supabase auth**; **Upstash-backed** per-user hourly/daily rate limits in production; validates body with Zod; builds prompts; calls **Replicate** (and related helpers); returns generated image URL. Sanitizes `referenceImageUrls` to Supabase public object URLs only. |
+| **`POST /api/auth/password-signin`** | Validates email/password; **Upstash** lockout after repeated failures; returns session cookies on success. |
 | **`GET /api/live-scores`** | Fetches and normalizes **NCAA** scoreboard JSON for live/final game display. |
 | **Instagram** (`/api/instagram/*`) | OAuth connect/callback, connection status, and **publish** (Graph API: create media + publish) using decrypted tokens from `instagram_accounts`. |
 
@@ -186,7 +187,8 @@ Other pages call Supabase **directly from the browser or server** for CRUD on pr
 - **RLS** is the primary enforcement mechanism for multi-tenant data (managers vs each other; users vs profiles).
 - **Anon key** is used in browser and server clients; no service-role client appears required for normal user flows in the documented schema.
 - **Instagram tokens** are stored encrypted; decryption happens only on the server for publish.
-- **Generate route** restricts reference images to known Supabase paths to avoid SSRF/open proxy behavior.
+- **Generate route** requires a signed-in user, enforces reference images to known Supabase paths (SSRF/open proxy), and rate-limits generations per user in production (Upstash).
+- **Password sign-in** uses `POST /api/auth/password-signin` plus Upstash-backed lockout (5 failures → 10-minute cooldown per email).
 
 ---
 

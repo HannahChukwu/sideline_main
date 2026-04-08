@@ -38,16 +38,48 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
 ### API routes
 
 - **`POST /api/generate`**
+  - Requires a **signed-in Supabase user** (401 if anonymous)
+  - **Rate limits** per user via **Upstash Redis** in production (hourly + daily caps; 503 if Redis env is missing in production)
   - Validates request body with Zod
   - Generates prompt/copy with Anthropic when configured (fallback prompt builder otherwise)
   - Generates image via Replicate FLUX.2 Pro
   - Enforces strict sanitization for reference image URLs (must come from this app's Supabase public references bucket)
 - **Instagram API (scaffold only—not production-ready)**  
   Route handlers exist (`/api/instagram/connect`, `/oauth/callback`, `/status`, `/publish`) for Meta OAuth, token storage, and Graph publish. **The Meta app / API flow is not wired through successfully yet**, so users cannot complete “Connect Instagram” or post generated images to Instagram from this app. Treat this as future work once Meta app review, redirect URLs, and permissions are sorted.
+- **`POST /api/auth/password-signin`**
+  - Email + password sign-in with session cookies; enforces failed-attempt lockout via Redis (see **Security features**)
 - **`GET /api/live-scores`**
   - Fetches NCAA scoreboard data across sports
   - Normalizes, deduplicates, and sorts live/upcoming/final games
   - Falls back to simulated data when NCAA source is unavailable
+
+## Security features
+
+- **Authentication and route gating**  
+  Supabase Auth backs sign-in. [`src/proxy.ts`](src/proxy.ts) refreshes sessions and redirects unauthenticated users away from protected routes; signed-in users are kept in the correct role portal (`designer` / `athlete` / `student`). Optional `DEV_BYPASS_AUTH` is for local debugging only.
+
+- **Email/password sign-in lockout (brute-force slowdown)**  
+  - **Flow**: The auth UI does **not** call `signInWithPassword` on the browser for email/password. It **`POST`s to [`/api/auth/password-signin`](src/app/api/auth/password-signin/route.ts)** so the server validates credentials, applies lockout logic, and **sets Supabase session cookies** on success.  
+  - **Rules** (see [`src/lib/auth/loginLockout.ts`](src/lib/auth/loginLockout.ts)): Failed attempts are counted per **normalized email** (trim + lowercase). Redis keys use **SHA-256 of that email**, not the raw address in the key. After **5** failed attempts within a **15-minute** rolling window, the account identifier is **locked for 10 minutes**. While locked, the API returns **429** with a **`Retry-After`** header (seconds). A **successful** sign-in **clears** both the failure counter and any lock.  
+  - **Infrastructure**: Uses the same **`UPSTASH_REDIS_REST_URL`** and **`UPSTASH_REDIS_REST_TOKEN`** as AI rate limiting. If those are missing, **lockout is disabled** (local dev without Redis still works; production should set Upstash for both features).  
+  - **OAuth**: **Google sign-in is unchanged** and does not go through this route or counter.  
+  - **Limitation**: The public Supabase **anon** key can still be used to call Supabase Auth APIs directly outside this app; this lockout protects users going through **your** sign-in path and aligns sessions with the server route. Stronger guarantees require provider/network-level controls.
+
+- **Database and storage access**  
+  **Row Level Security (RLS)** on Postgres tables limits who can read/write rows (see [`supabase-schema.sql`](supabase-schema.sql)). **Storage** policies scope uploads to the authenticated user’s folder (`auth.uid()` as the first path segment). Reference images for AI live in **`generation-references`**; archived generated posters (stable URLs on save) use **`generated-posters`** so reference uploads stay separate from finished assets.
+
+- **AI generation endpoint (`POST /api/generate`)**  
+  - **401** for anonymous callers—Replicate and Anthropic are not invoked without a valid Supabase session.  
+  - **Per-user rate limits** in production using **Upstash Redis** (sliding windows: hourly and daily caps; tune with `GENERATE_RL_PER_HOUR` and `GENERATE_RL_PER_DAY`). **429** when limits are exceeded (`Retry-After` set when available).  
+  - **Fail closed in production** if Upstash env vars are missing (**503**) so the endpoint cannot run uncapped paid jobs.  
+  - In local/non-production dev, rate limiting is **skipped** when Upstash is not configured.  
+  - **Reference image URLs** in the JSON body must point at this project’s Supabase public **`generation-references`** objects only—reduces open-proxy and SSRF risk.  
+  - Request bodies are validated with **Zod** before any external AI calls.
+
+- **Secrets**  
+  `REPLICATE_API_TOKEN`, `ANTHROPIC_API_KEY`, `UPSTASH_REDIS_REST_TOKEN`, and Meta/Instagram secrets belong only in **server** environment variables (e.g. Vercel project settings, `.env.local`), not in `NEXT_PUBLIC_*` keys.
+
+For more detail, see [`ARCHITECTURE.md`](ARCHITECTURE.md) (API table and security model).
 
 ## Tech Stack
 
@@ -56,6 +88,7 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
 - **Data/Auth**: Supabase (`@supabase/supabase-js`, `@supabase/ssr`)
 - **Validation**: Zod
 - **State**: Zustand
+- **Rate limiting (production AI)**: Upstash Redis (`@upstash/redis`, `@upstash/ratelimit`)
 - **AI/Integrations**: Replicate, Anthropic; Meta Graph API code paths exist for Instagram but are **not functional** yet
 - **Testing**: Vitest
 
@@ -81,6 +114,15 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 # Required for image generation API
 REPLICATE_API_TOKEN=your-replicate-token
+
+# Required in production for /api/generate rate limits (Upstash Redis REST)
+# Local dev works without these (limits skipped). Create a Redis database at https://upstash.com
+UPSTASH_REDIS_REST_URL=https://your-redis.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your-upstash-token
+
+# Optional caps (defaults: 15/hour, 50/day per authenticated user)
+# GENERATE_RL_PER_HOUR=15
+# GENERATE_RL_PER_DAY=50
 
 # Optional but recommended for stronger prompt/copy generation
 ANTHROPIC_API_KEY=your-anthropic-api-key
@@ -125,7 +167,7 @@ The production build runs on [Vercel](https://vercel.com) as a standard **Next.j
 2. **Framework**: Vercel should detect Next.js automatically. The dev script uses `next dev --webpack`; production uses the default `next build` / Node runtime for App Router and API routes.
 
 3. **Environment variables**: Add the same keys you use locally in **Project → Settings → Environment Variables** (Production / Preview as needed):  
-   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `REPLICATE_API_TOKEN`, and optionally `ANTHROPIC_API_KEY`.  
+   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `REPLICATE_API_TOKEN`, **`UPSTASH_REDIS_REST_URL`**, **`UPSTASH_REDIS_REST_TOKEN`** (required for production generate rate limits—without them, `/api/generate` returns 503), and optionally `ANTHROPIC_API_KEY`, `GENERATE_RL_PER_HOUR`, `GENERATE_RL_PER_DAY`.  
    Do **not** assume Instagram env vars are required until Meta integration is complete.
 
 4. **Supabase auth URLs**: In the Supabase dashboard, add **Site URL** `https://sideline-main.vercel.app` (or your custom domain) under **Authentication → URL configuration**, and put `https://sideline-main.vercel.app/auth/callback` in the redirect allow list along with `http://localhost:3000/auth/callback` for local dev and any preview URLs you use.
@@ -153,7 +195,7 @@ After deploy, smoke-test sign-in, protected routes, and `/api/generate` (Replica
 
 - `src/app` - App Router pages and API route handlers
 - `src/components` - feature and UI components
-- `src/lib` - Supabase helpers, prompt builders, schedule parsing, editor utilities, store
+- `src/lib` - Supabase helpers, auth helpers (`auth/loginLockout`), prompt builders, rate limiting (`rate-limit/`), schedule parsing, editor utilities, store
 - `src/proxy.ts` - session refresh + route access control
 - `supabase-schema.sql` - schema, RLS, triggers, storage bucket setup
 - `supabase-seed-school.sql` - seed records for school/team/athlete schedule flows

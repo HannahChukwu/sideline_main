@@ -180,23 +180,57 @@ function AuthForm() {
           setEmailSent(true);
         }
       } else {
-        const { data, error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
+        const res = await fetch("/api/auth/password-signin", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
         });
 
-        if (signInError) throw signInError;
+        let payload: {
+          error?: string;
+          retryAfterSec?: number;
+          ok?: boolean;
+          userId?: string;
+        } = {};
+        try {
+          payload = await res.json();
+        } catch {
+          /* non-JSON error body */
+        }
 
-        if (data.user) {
-          // Fetch stored role and redirect to correct dashboard
-          const { data: profile } = await supabase
+        if (!res.ok) {
+          if (res.status === 429 && payload.retryAfterSec != null) {
+            const m = Math.max(1, Math.ceil(payload.retryAfterSec / 60));
+            setError(
+              payload.error ??
+                `Too many failed attempts. Try again in about ${m} minute${m === 1 ? "" : "s"}.`
+            );
+          } else {
+            setError(payload.error ?? "Invalid email or password.");
+          }
+          return;
+        }
+
+        router.refresh();
+        const supabaseFresh = createClient();
+        const {
+          data: { user: signedInUser },
+        } = await supabaseFresh.auth.getUser();
+
+        if (signedInUser) {
+          const { data: profile } = await supabaseFresh
             .from("profiles")
             .select("role")
-            .eq("id", data.user.id)
+            .eq("id", signedInUser.id)
             .single();
 
           const roleFromDb = (profile as unknown as { role?: Role | null } | null)?.role ?? null;
-          const destination = roleFromDb ? ROLE_ROUTES[roleFromDb] : (selectedRole ? ROLE_ROUTES[selectedRole] : "/");
+          const destination = roleFromDb
+            ? ROLE_ROUTES[roleFromDb]
+            : selectedRole
+              ? ROLE_ROUTES[selectedRole]
+              : "/";
 
           router.push(destination);
           router.refresh();
