@@ -22,18 +22,20 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
 
 - **Landing** (`/`): branded entry page with sign in/sign up links. Live at [sideline-main.vercel.app](https://sideline-main.vercel.app/).
 - **Auth** (`/auth` + `/auth/callback`): email/password + OAuth callback handling.
-- **Designer dashboard** (`/designer`): asset list, status filtering, basic personal stats.
+- **Designer dashboard** (`/designer`): asset list, status filtering, basic personal stats; **school teams** you manage (from Supabase); **team schedule** preview (games imported in Manager); **Copy athlete invite link** (signed, time-limited URL for linking athlete/student accounts to a team).
 - **Designer create** (`/designer/create`): AI generation form with:
   - asset types (`gameday`, `final-score`, `poster`, `highlight`)
   - style, format, optional refinement chat
   - reference image upload (athlete/home logo/away logo)
+  - **Schedule quick pick** (when signed in as a school manager): choose a team and game to pre-fill teams, date, venue, and time from `schedules`
   - save/publish flow
   - UI for Instagram connect/publish (not functional until Meta integration is complete—see **Instagram / Meta status**)
-- **Athlete portal** (`/athlete`): published content consumption and interaction.
+- **Athlete portal** (`/athlete`): published content consumption and interaction; header can show the **official linked team** name when `profiles.team_id` is set.
+- **Athlete join** (`/athlete/join?t=…`): redeems a **signed invite** (after sign-in) and sets `profiles.team_id`; unauthenticated users are sent through `/auth` with `next` preserved (see **API routes**).
 - **Student feed** (`/feed`): poster feed + grouped designer updates.
 - **Live scores** (`/scores`): NCAA-backed scoreboard with fallback simulation.
 - **Settings** (`/settings`): profile editing.
-- **Manager flow still present** (`/manager`, `/manager/editor`) and backed by Supabase manager tables.
+- **Manager flow** (`/manager`, `/manager/editor`): school/team/athlete selection, **schedule import** from **CSV or Excel** (`.xlsx` / `.xls`, first sheet) via column mapping, scores for finalized games, and pipeline into the editor—backed by Supabase `schools`, `teams`, `athletes`, `schedules`.
 
 ### API routes
 
@@ -52,6 +54,13 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
   - Fetches NCAA scoreboard data across sports
   - Normalizes, deduplicates, and sorts live/upcoming/final games
   - Falls back to simulated data when NCAA source is unavailable
+- **`POST /api/team-invite`** (authenticated **school manager** only)
+  - Body: `{ "team_id": "<uuid>" }` for a team under the caller’s school
+  - Returns `{ "url", "expires_in_days" }` pointing at `/athlete/join?t=…`
+  - Signs tokens with **`TEAM_INVITE_SECRET`** (HMAC-SHA256; **16+ characters**). In production, missing/short secret yields **503**.
+- **`POST /api/team-invite/redeem`**
+  - Body: `{ "token": "<signed token>" }`; requires a signed-in user whose **`profiles.role`** is **`athlete`** or **`student`**
+  - Sets **`profiles.team_id`** when the token is valid and not expired (default **14-day** TTL)
 
 ## Security features
 
@@ -66,7 +75,14 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
   - **Limitation**: The public Supabase **anon** key can still be used to call Supabase Auth APIs directly outside this app; this lockout protects users going through **your** sign-in path and aligns sessions with the server route. Stronger guarantees require provider/network-level controls.
 
 - **Database and storage access**  
-  **Row Level Security (RLS)** on Postgres tables limits who can read/write rows (see [`supabase-schema.sql`](supabase-schema.sql)). **Storage** policies scope uploads to the authenticated user’s folder (`auth.uid()` as the first path segment). Reference images for AI live in **`generation-references`**; archived generated posters (stable URLs on save) use **`generated-posters`** so reference uploads stay separate from finished assets.
+  **Row Level Security (RLS)** on Postgres tables limits who can read/write rows (see [`supabase-schema.sql`](supabase-schema.sql)). **Storage** policies scope uploads to the authenticated user’s folder (`auth.uid()` as the first path segment). Reference images for AI live in **`generation-references`**; archived generated posters (stable URLs on save) use **`generated-posters`** so reference uploads stay separate from finished assets.  
+  **Schedules and team linking**: managers own `schedules` for their teams; athletes/students with **`profiles.team_id`** set can **read** matching `schedules` rows and the corresponding **`teams`** / **`schools`** rows (for display names)—see policies *Athletes can view own team schedule*, *Members can read linked team*, *Members can read school for linked team* in the schema.
+
+- **Athlete invite links**  
+  Invite URLs contain a **signed payload** (team id + expiry); only the server mints tokens (manager-gated) and verifies them on redeem. This avoids exposing long-lived secrets in the link beyond the token itself; **rotate `TEAM_INVITE_SECRET`** if you believe it was leaked (old links become invalid).
+
+- **Post-login redirects**  
+  The **`next`** query parameter is validated as a same-origin path (no `//…` open redirects) on email sign-in/sign-up and OAuth callback before redirect.
 
 - **AI generation endpoint (`POST /api/generate`)**  
   - **401** for anonymous callers—Replicate and Anthropic are not invoked without a valid Supabase session.  
@@ -77,7 +93,7 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
   - Request bodies are validated with **Zod** before any external AI calls.
 
 - **Secrets**  
-  `REPLICATE_API_TOKEN`, `ANTHROPIC_API_KEY`, `UPSTASH_REDIS_REST_TOKEN`, and Meta/Instagram secrets belong only in **server** environment variables (e.g. Vercel project settings, `.env.local`), not in `NEXT_PUBLIC_*` keys.
+  `REPLICATE_API_TOKEN`, `ANTHROPIC_API_KEY`, `UPSTASH_REDIS_REST_TOKEN`, **`TEAM_INVITE_SECRET`** (invite signing), and Meta/Instagram secrets belong only in **server** environment variables (e.g. Vercel project settings, `.env.local`), not in `NEXT_PUBLIC_*` keys.
 
 For more detail, see [`ARCHITECTURE.md`](ARCHITECTURE.md) (API table and security model).
 
@@ -130,6 +146,10 @@ ANTHROPIC_API_KEY=your-anthropic-api-key
 # Optional local dev bypass for auth/role checks in proxy.ts
 # DEV_BYPASS_AUTH=true
 
+# Signed athlete team invite links (POST /api/team-invite). Min 16 chars; use a long random value in production.
+# openssl rand -hex 32
+TEAM_INVITE_SECRET=your-random-secret-at-least-16-chars
+
 # Instagram / Meta (needed only when IG integration is fixed and enabled)
 # INSTAGRAM_META_APP_ID=your-meta-app-id
 # INSTAGRAM_META_APP_SECRET=your-meta-app-secret
@@ -167,7 +187,7 @@ The production build runs on [Vercel](https://vercel.com) as a standard **Next.j
 2. **Framework**: Vercel should detect Next.js automatically. The dev script uses `next dev --webpack`; production uses the default `next build` / Node runtime for App Router and API routes.
 
 3. **Environment variables**: Add the same keys you use locally in **Project → Settings → Environment Variables** (Production / Preview as needed):  
-   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `REPLICATE_API_TOKEN`, **`UPSTASH_REDIS_REST_URL`**, **`UPSTASH_REDIS_REST_TOKEN`** (required for production generate rate limits—without them, `/api/generate` returns 503), and optionally `ANTHROPIC_API_KEY`, `GENERATE_RL_PER_HOUR`, `GENERATE_RL_PER_DAY`.  
+   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `REPLICATE_API_TOKEN`, **`UPSTASH_REDIS_REST_URL`**, **`UPSTASH_REDIS_REST_TOKEN`** (required for production generate rate limits—without them, `/api/generate` returns 503), **`TEAM_INVITE_SECRET`** (required for **Copy athlete invite link** in production—without a valid 16+ char secret, `/api/team-invite` returns 503), and optionally `ANTHROPIC_API_KEY`, `GENERATE_RL_PER_HOUR`, `GENERATE_RL_PER_DAY`.  
    Do **not** assume Instagram env vars are required until Meta integration is complete.
 
 4. **Supabase auth URLs**: In the Supabase dashboard, add **Site URL** `https://sideline-main.vercel.app` (or your custom domain) under **Authentication → URL configuration**, and put `https://sideline-main.vercel.app/auth/callback` in the redirect allow list along with `http://localhost:3000/auth/callback` for local dev and any preview URLs you use.
@@ -195,7 +215,7 @@ After deploy, smoke-test sign-in, protected routes, and `/api/generate` (Replica
 
 - `src/app` - App Router pages and API route handlers
 - `src/components` - feature and UI components
-- `src/lib` - Supabase helpers, auth helpers (`auth/loginLockout`), prompt builders, rate limiting (`rate-limit/`), schedule parsing, editor utilities, store
+- `src/lib` - Supabase helpers, auth helpers (`auth/loginLockout`), prompt builders, rate limiting (`rate-limit/`), schedule parsing (`schedule/**`, including **CSV** and **Excel** via `parseExcel.ts` + `xlsx`), **team invite signing** (`team-invite/token.ts`), editor utilities, store
 - `src/proxy.ts` - session refresh + route access control
 - `supabase-schema.sql` - schema, RLS, triggers, storage bucket setup
 - `supabase-seed-school.sql` - seed records for school/team/athlete schedule flows

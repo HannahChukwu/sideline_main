@@ -12,11 +12,11 @@ Sideline is an **AI-assisted athletics marketing** app with **role-based portals
 
 | Role      | Primary routes              | Purpose |
 |-----------|-----------------------------|---------|
-| Designer  | `/designer`, `/designer/create` | Create assets, optional Instagram publish |
-| Athlete   | `/athlete`                  | Review and react to published assets |
-| Student   | `/feed`                     | Browse the public-style feed |
+| Designer  | `/designer`, `/designer/create` | Create assets; when the user is also a **school manager**, see managed teams, schedule preview, **signed athlete invite links**, and **schedule quick pick** on create; optional Instagram publish (stub) |
+| Athlete   | `/athlete`, `/athlete/stats`, `/athlete/join` | Review assets; stats; **join** flow sets `profiles.team_id` from an invite token |
+| Student   | `/feed`                     | Browse the public-style feed; may redeem team invites like athletes |
 
-A parallel **manager** workflow (schools, teams, rosters, schedules, drafts, editor) lives under `/manager` and related Supabase tables; it shares the same auth and asset model where appropriate.
+A parallel **manager** workflow (schools, teams, rosters, **schedule import** CSV/Excel, drafts, editor) lives under `/manager` and related Supabase tables; imported **`schedules`** rows feed the designer dashboard, create-page quick pick, and athlete-facing schedule (after linking).
 
 ---
 
@@ -83,10 +83,11 @@ Build tooling includes **ESLint**, **Vitest** for unit tests under `src/lib/**`,
 ```
 src/
   app/                 # App Router: layouts, pages, route handlers
-    api/               # Server-only HTTP handlers (generate, Instagram, live scores)
+    api/               # Server-only HTTP handlers (generate, team-invite, Instagram, live scores, …)
     auth/              # Sign-in UI + OAuth callback route
     designer/          # Designer portal + asset creation
-    athlete/, feed/    # Athlete and student feeds
+    athlete/           # Portal, stats, join (invite redemption)
+    feed/              # Student feed
     manager/           # School/team/schedule + editor pipeline
     settings/          # Profile settings
   components/          # Feature UI (navbar, editor, schedule importer, pipeline wizard)
@@ -94,7 +95,8 @@ src/
     supabase/          # Browser + server Supabase clients; domain helpers (assets, teams, …)
     prompt/            # Prompt compilation for image/caption flows
     editor/              # Layout/copy builders for post editor
-    schedule/           # CSV parsing and column mapping
+    schedule/           # CSV + Excel parsing, column mapping, mapping schedule rows → poster form fields
+    team-invite/        # HMAC-signed invite tokens (team_id + exp)
     imageGen/           # Stub image provider (legacy/alternate path)
     instagram/          # Token encryption helpers for stored IG credentials
     pipeline/           # Types and fixtures for manager pipeline
@@ -128,18 +130,18 @@ Canonical schema is **`supabase-schema.sql`**. Major groupings:
 ### 5.1 Identity and profiles
 
 - **`auth.users`** — Supabase-managed identities.
-- **`public.profiles`** — `id` → `auth.users`, `role` (`designer` \| `athlete` \| `student`), `full_name`, `email`. Populated by trigger **`handle_new_user`** from signup metadata.
+- **`public.profiles`** — `id` → `auth.users`, `role` (`designer` \| `athlete` \| `student`), `full_name`, `email`, optional **`team_id`** → `teams.id`. For **athletes/students**, `team_id` is set via **`/athlete/join`** (invite redemption) or manual update; it gates **`schedules`** / linked **`teams`** / **`schools`** reads under RLS. Populated by trigger **`handle_new_user`** from signup metadata (team unset until join).
 
 ### 5.2 Manager / program data
 
 Scoped to a **school owner** (`schools.manager_id`):
 
-- **`schools`**, **`teams`**, **`athletes`**, **`schedules`** — roster and calendar data.
+- **`schools`**, **`teams`**, **`athletes`**, **`schedules`** — roster and calendar data; schedules are usually replaced on import from **CSV/Excel** in the manager UI.
 - **`logos`** — metadata rows pointing at Storage paths.
 - **`manager_drafts`** — persisted generation requests, compiled prompts, editor JSON.
 - **`draft_reference_images`** — reference assets tied to drafts.
 
-RLS policies generally restrict these rows to the owning manager (via school membership).
+RLS: **managers** have full CRUD on their school’s teams, athletes, schedules, etc. Additional **SELECT** policies allow **authenticated users** who have **`profiles.team_id`** equal to a team to read that **`teams`** row, its **`schools`** row (for labels), and **`schedules`** for that team—so linked athletes can see names and the official game list without being managers.
 
 ### 5.3 Published content and engagement
 
@@ -165,6 +167,8 @@ Reference uploads for generation use a dedicated bucket (see `GENERATION_REFEREN
 | **`POST /api/generate`** | Requires **Supabase auth**; **Upstash-backed** per-user hourly/daily rate limits in production; validates body with Zod; builds prompts; calls **Replicate** (and related helpers); returns generated image URL. Sanitizes `referenceImageUrls` to Supabase public object URLs only. |
 | **`POST /api/auth/password-signin`** | Validates email/password; **Upstash** lockout after repeated failures; returns session cookies on success. |
 | **`GET /api/live-scores`** | Fetches and normalizes **NCAA** scoreboard JSON for live/final game display. |
+| **`POST /api/team-invite`** | Session user must be **`schools.manager_id`** for the given **`team_id`**; returns absolute **`/athlete/join?t=…`** URL; signs with **`TEAM_INVITE_SECRET`** (server-only). |
+| **`POST /api/team-invite/redeem`** | Validates token (HMAC + expiry); session user must be **`athlete`** or **`student`**; updates **`profiles.team_id`**. |
 | **Instagram** (`/api/instagram/*`) | OAuth connect/callback, connection status, and **publish** (Graph API: create media + publish) using decrypted tokens from `instagram_accounts`. |
 
 Other pages call Supabase **directly from the browser or server** for CRUD on profiles, assets, and manager entities, relying on RLS for authorization.
@@ -189,6 +193,8 @@ Other pages call Supabase **directly from the browser or server** for CRUD on pr
 - **Instagram tokens** are stored encrypted; decryption happens only on the server for publish.
 - **Generate route** requires a signed-in user, enforces reference images to known Supabase paths (SSRF/open proxy), and rate-limits generations per user in production (Upstash).
 - **Password sign-in** uses `POST /api/auth/password-signin` plus Upstash-backed lockout (5 failures → 10-minute cooldown per email).
+- **Team invites**: minting is **manager-only** (verified via Supabase read on `teams` + embedded `schools.manager_id`). Tokens are **HMAC-signed**; **redeem** checks role (**athlete** / **student** only). **`TEAM_INVITE_SECRET`** must be long and server-only; missing/weak secret disables minting in production (**503**).
+- **OAuth and email flows**: redirect targets from **`next`** are restricted to same-origin relative paths to reduce open-redirect risk.
 
 ---
 
@@ -198,6 +204,7 @@ Typical variables (names only; values belong in `.env.local` — not committed):
 
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — required for auth and data.
 - Replicate / Anthropic keys as consumed by `src/app/api/generate/route.ts`.
+- **`TEAM_INVITE_SECRET`** — **16+ characters**; required for `POST /api/team-invite` in production (signing).
 - Meta / Instagram app credentials for OAuth and publishing (see Instagram route handlers).
 - `DEV_BYPASS_AUTH` — optional developer bypass for `proxy.ts` behavior.
 
@@ -212,8 +219,9 @@ Typical variables (names only; values belong in `.env.local` — not committed):
 
 ## 11. Known gaps and evolution (as of this repo)
 
-- Route protection is implemented in **`proxy.ts`**, but complex edge cases (deep links, new routes) should be regression-tested when adding pages.
+- Route protection is implemented in **`proxy.ts`**, but complex edge cases (deep links, new routes) should be regression-tested when adding pages. **`/athlete/join`** lives under the `/athlete` prefix: unauthenticated users are sent to **`/auth`** with **`next`** including the invite query string, then return to redeem after sign-in.
 - README notes **storage/reference uploads** may be partial in some UX paths; generation already assumes references can be served from the references bucket when provided.
+- **Schedules** are currently **replaced** on full import (not merged); invite links do not revoke themselves after use (security is **expiry + secret**; optional future: one-time tokens in Postgres).
 - **Prisma / NextAuth / React Query** are not part of the active architecture; prefer Supabase clients and existing patterns unless a deliberate migration adds them.
 
 ---
