@@ -5,6 +5,7 @@ import { z } from "zod";
 import { GENERATION_REFERENCES_BUCKET } from "@/lib/supabase/referenceUpload";
 import { consumeGenerateRateLimit } from "@/lib/rate-limit/generateRateLimit";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
+import { REPLICATE_IMAGE_MODEL_ID } from "@/lib/imageGen/replicateImageModel";
 
 const RequestSchema = z.object({
   type: z.enum(["gameday", "final-score", "poster", "highlight"]),
@@ -28,8 +29,8 @@ const RequestSchema = z.object({
   mood: z.string().optional(),
   // Chat-based refinement history — accumulated user edit messages
   refinements: z.array(z.string()).optional().default([]),
-  /** HTTPS URLs to jpeg/png/gif/webp; order: athlete (1), home logo (2), away logo (3), … */
-  referenceImageUrls: z.array(z.string().url()).max(8).optional().default([]),
+  /** HTTPS URLs to jpeg/png/gif/webp; order: athlete (1), home logo (2), away logo (3), … (model allows up to 14) */
+  referenceImageUrls: z.array(z.string().url()).max(14).optional().default([]),
 });
 
 /**
@@ -73,21 +74,21 @@ function sanitizeReferenceImageUrls(urls: string[]): string[] | NextResponse {
   return out;
 }
 
-// Maps output format → orientation hint for prompts; pixel size kept for parity with FLUX aspect targets
+// Maps output format → orientation hint for prompts (copy layer); image API uses FORMAT_IMAGE below.
 const FORMAT_CONFIG: Record<string, { size: "1024x1792" | "1024x1024" | "1792x1024"; orientationHint: string }> = {
   story:  { size: "1024x1792", orientationHint: "portrait 9:16, optimised for Instagram Story or TikTok" },
   post:   { size: "1024x1024", orientationHint: "square 1:1, optimised for Instagram post" },
   banner: { size: "1792x1024", orientationHint: "landscape 16:9, optimised for Twitter banner or web header" },
 };
 
-/** Replicate flux-2-pro: one run = one image; 1 MP keeps cost predictable (see model docs). */
-const FORMAT_FLUX: Record<
+/** Replicate `google/nano-banana-pro` — aspect_ratio + resolution per model schema */
+const FORMAT_IMAGE: Record<
   string,
-  { aspect_ratio: "1:1" | "9:16" | "16:9"; resolution: "1 MP" }
+  { aspect_ratio: "1:1" | "9:16" | "16:9"; resolution: "2K" }
 > = {
-  story:  { aspect_ratio: "9:16", resolution: "1 MP" },
-  post:   { aspect_ratio: "1:1", resolution: "1 MP" },
-  banner: { aspect_ratio: "16:9", resolution: "1 MP" },
+  story:  { aspect_ratio: "9:16", resolution: "2K" },
+  post:   { aspect_ratio: "1:1", resolution: "2K" },
+  banner: { aspect_ratio: "16:9", resolution: "2K" },
 };
 
 function httpUrlFromUnknown(value: unknown): string | null {
@@ -362,7 +363,7 @@ function buildFallbackPrompt(params: {
   ].filter(Boolean);
 
   const typoDirectives =
-    `This is a FLUX.2 Pro college / university athletics graphic. Include clean, legible typography with correct spelling: ` +
+    `This is a college / university athletics graphic for high-quality image generation. Include clean, legible typography with correct spelling: ` +
     `school names "${homeTeam}" (home) and "${awayTeam}" (opponent)${eventDate ? `, date ${eventDate}` : ""}. ` +
     `Hierarchy: large headline matchup, secondary line for date or venue, smaller details for broadcast or hashtag. ` +
     `High production value, print-ready sports marketing layout, correct kerning, strong contrast for social sharing. ` +
@@ -474,7 +475,7 @@ export async function POST(req: NextRequest) {
   const referenceInstructions =
     referenceImageCount > 0
       ? `
-Reference images (FLUX input order, cite as image 1, image 2, … in the imagePrompt when needed):
+Reference images (same order as image_input; cite as image 1, image 2, … in the imagePrompt when needed):
 - Image 1: primary athlete — preserve identity; integrate into the layout.
 ${referenceImageCount >= 2 ? "- Image 2: home team logo or mark — render sharply; user responsible for trademark accuracy.\n" : ""}${referenceImageCount >= 3 ? "- Image 3: opponent team logo or mark — same as image 2.\n" : ""}`
       : "";
@@ -545,7 +546,7 @@ Return a JSON object with exactly these fields (no markdown, raw JSON only):
 {
   "title": "Short punchy headline, max 6 words, all caps, hype energy",
   "tagline": "Supporting slogan or matchup line, max 12 words",
-  "imagePrompt": "A single detailed FLUX.2 Pro image generation prompt for a college athletics poster or social graphic. Must incorporate: the full style descriptor, sport environment, composition, team color atmosphere, mood, and ALL user refinements. Include legible typography with EXACT correct spelling for the two school/team names (${homeTeam} vs ${awayTeam})${eventDate ? ` and the date (${eventDate})` : ""}${venue ? `; include venue (${venue}) if space allows` : ""}${gameTime ? `; include game time (${gameTime}) if suitable` : ""}${broadcastOrStreaming ? `; you may add a small broadcast/stream line: ${broadcastOrStreaming}` : ""}${hashtag ? `; optionally include hashtag ${hashtag}` : ""}. Use a clear hierarchy (headline, subhead, details). If reference images are used, name them as image 1, image 2, etc., and tie instructions to those indices. Remind that the user is responsible for trademark/logo accuracy. Photoreal or illustrated is fine per style. End with: professional sports marketing layout, high contrast, social-ready."
+  "imagePrompt": "A single detailed image generation prompt for a college athletics poster or social graphic. Must incorporate: the full style descriptor, sport environment, composition, team color atmosphere, mood, and ALL user refinements. Include legible typography with EXACT correct spelling for the two school/team names (${homeTeam} vs ${awayTeam})${eventDate ? ` and the date (${eventDate})` : ""}${venue ? `; include venue (${venue}) if space allows` : ""}${gameTime ? `; include game time (${gameTime}) if suitable` : ""}${broadcastOrStreaming ? `; you may add a small broadcast/stream line: ${broadcastOrStreaming}` : ""}${hashtag ? `; optionally include hashtag ${hashtag}` : ""}. Use a clear hierarchy (headline, subhead, details). If reference images are used, name them as image 1, image 2, etc., and tie instructions to those indices. Remind that the user is responsible for trademark/logo accuracy. Photoreal or illustrated is fine per style. End with: professional sports marketing layout, high contrast, social-ready."
 }`;
 
       const stream = anthropic.messages.stream({
@@ -573,7 +574,7 @@ Return a JSON object with exactly these fields (no markdown, raw JSON only):
     }
   }
 
-  // ── Step 2: Generate image (Replicate FLUX.2 Pro) ───────────────────────────
+  // ── Step 2: Generate image (Replicate) ───────────────────────────────────
   const replicateToken = process.env.REPLICATE_API_TOKEN?.trim();
   if (!replicateToken) {
     return NextResponse.json(
@@ -584,18 +585,17 @@ Return a JSON object with exactly these fields (no markdown, raw JSON only):
 
   let imageUrl: string;
   try {
-    const fluxFormat = FORMAT_FLUX[format ?? "story"] ?? FORMAT_FLUX.story;
+    const imageFormat = FORMAT_IMAGE[format ?? "story"] ?? FORMAT_IMAGE.story;
     const replicate = new Replicate({ auth: replicateToken });
-    const output = await replicate.run("black-forest-labs/flux-2-pro", {
+    const output = await replicate.run(REPLICATE_IMAGE_MODEL_ID, {
       input: {
         prompt: copy.imagePrompt,
-        aspect_ratio: fluxFormat.aspect_ratio,
-        resolution: fluxFormat.resolution,
-        input_images: sanitizedRefs,
-        output_format: "webp",
-        output_quality: 85,
-        safety_tolerance: 2,
-        prompt_upsampling: false,
+        aspect_ratio: imageFormat.aspect_ratio,
+        resolution: imageFormat.resolution,
+        image_input: sanitizedRefs,
+        output_format: "png",
+        safety_filter_level: "block_only_high",
+        allow_fallback_model: true,
       },
     });
     imageUrl = await imageUrlFromReplicateOutput(output);

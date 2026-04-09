@@ -506,7 +506,7 @@ export default function AthleteStatsPage() {
                 )}
                 {!athleteScheduleErr && athleteSchedule.length === 0 && (
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    No games on file yet. When your designer uploads the schedule in Manager, games appear here
+                    No games on file yet. When your designer imports the schedule on the Team tab, games appear here
                     automatically.
                   </p>
                 )}

@@ -62,8 +62,9 @@ create trigger on_auth_user_created
   execute procedure public.handle_new_user();
 
 -- ============================================================
--- 4. MANAGER DATA MODEL (SCHOOLS, TEAMS, ATHLETES, SCHEDULES)
---    These power the manager workflow (teams, rosters, schedules).
+-- 4. DESIGNER PROGRAM DATA (SCHOOLS, TEAMS, ATHLETES, SCHEDULES)
+--    Teams, rosters, schedules — managed on the designer dashboard; used in Generator.
+--    schools.manager_id = auth user id of the designer who owns the school (RLS).
 -- ============================================================
 
 create table if not exists public.schools (
@@ -127,7 +128,7 @@ alter table public.logos drop constraint if exists logos_ref_check;
 alter table public.logos add constraint logos_ref_check
   check ((school_id is not null) or (team_id is not null));
 
--- Drafts for the manager workflow (replaces local-only draft store)
+-- Drafts for the designer program editor (replaces local-only draft store)
 create table if not exists public.manager_drafts (
   id                       uuid primary key default gen_random_uuid(),
   manager_id               uuid        not null references auth.users(id) on delete cascade,
@@ -151,16 +152,56 @@ create table if not exists public.draft_reference_images (
 );
 
 -- ============================================================
--- 5. ROW LEVEL SECURITY FOR MANAGER ENTITIES
---    Each manager (designer) only sees their own school/teams/data.
+-- 5. ROW LEVEL SECURITY FOR PROGRAM ENTITIES
+--    Each designer (school owner via manager_id) only sees their own school/teams/data.
+--
+--    SECURITY DEFINER helpers: policies must NOT use "school_id IN (SELECT id FROM schools …)"
+--    directly on teams/athletes/schedules — that re-enters schools RLS while evaluating the
+--    schools policy that references teams → "infinite recursion detected in policy for relation schools".
 -- ============================================================
+
+create or replace function public.school_managed_by_user(p_school_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.schools
+    where id = p_school_id and manager_id = auth.uid()
+  );
+$$;
+
+create or replace function public.team_managed_by_user(p_team_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.teams t
+    inner join public.schools s on s.id = t.school_id
+    where t.id = p_team_id and s.manager_id = auth.uid()
+  );
+$$;
+
+revoke all on function public.school_managed_by_user(uuid) from public;
+grant execute on function public.school_managed_by_user(uuid) to authenticated;
+
+revoke all on function public.team_managed_by_user(uuid) from public;
+grant execute on function public.team_managed_by_user(uuid) to authenticated;
 
 alter table public.schools enable row level security;
 
 drop policy if exists "Managers can manage own school" on public.schools;
 create policy "Managers can manage own school"
   on public.schools for all
-  using (manager_id = auth.uid());
+  using (manager_id = auth.uid())
+  with check (manager_id = auth.uid());
 
 drop policy if exists "Members can read school for linked team" on public.schools;
 create policy "Members can read school for linked team"
@@ -181,11 +222,8 @@ alter table public.teams enable row level security;
 drop policy if exists "Managers can manage teams for own school" on public.teams;
 create policy "Managers can manage teams for own school"
   on public.teams for all
-  using (
-    school_id in (
-      select id from public.schools where manager_id = auth.uid()
-    )
-  );
+  using (public.school_managed_by_user(school_id))
+  with check (public.school_managed_by_user(school_id));
 
 drop policy if exists "Members can read linked team" on public.teams;
 create policy "Members can read linked team"
@@ -203,28 +241,16 @@ alter table public.athletes enable row level security;
 drop policy if exists "Managers can manage athletes for own school" on public.athletes;
 create policy "Managers can manage athletes for own school"
   on public.athletes for all
-  using (
-    team_id in (
-      select t.id
-      from public.teams t
-      join public.schools s on t.school_id = s.id
-      where s.manager_id = auth.uid()
-    )
-  );
+  using (public.team_managed_by_user(team_id))
+  with check (public.team_managed_by_user(team_id));
 
 alter table public.schedules enable row level security;
 
 drop policy if exists "Managers can manage schedules for own school" on public.schedules;
 create policy "Managers can manage schedules for own school"
   on public.schedules for all
-  using (
-    team_id in (
-      select t.id
-      from public.teams t
-      join public.schools s on t.school_id = s.id
-      where s.manager_id = auth.uid()
-    )
-  );
+  using (public.team_managed_by_user(team_id))
+  with check (public.team_managed_by_user(team_id));
 
 drop policy if exists "Athletes can view own team schedule" on public.schedules;
 create policy "Athletes can view own team schedule"
@@ -246,16 +272,14 @@ drop policy if exists "Managers can manage logos for own school" on public.logos
 create policy "Managers can manage logos for own school"
   on public.logos for all
   using (
-    (school_id is not null and school_id in (
-      select id from public.schools where manager_id = auth.uid()
-    ))
+    (school_id is not null and public.school_managed_by_user(school_id))
     or
-    (team_id is not null and team_id in (
-      select t.id
-      from public.teams t
-      join public.schools s on t.school_id = s.id
-      where s.manager_id = auth.uid()
-    ))
+    (team_id is not null and public.team_managed_by_user(team_id))
+  )
+  with check (
+    (school_id is not null and public.school_managed_by_user(school_id))
+    or
+    (team_id is not null and public.team_managed_by_user(team_id))
   );
 
 alter table public.manager_drafts enable row level security;
@@ -263,7 +287,8 @@ alter table public.manager_drafts enable row level security;
 drop policy if exists "Managers can manage own drafts" on public.manager_drafts;
 create policy "Managers can manage own drafts"
   on public.manager_drafts for all
-  using (manager_id = auth.uid());
+  using (manager_id = auth.uid())
+  with check (manager_id = auth.uid());
 
 alter table public.draft_reference_images enable row level security;
 
@@ -271,6 +296,11 @@ drop policy if exists "Managers can manage reference images for own drafts" on p
 create policy "Managers can manage reference images for own drafts"
   on public.draft_reference_images for all
   using (
+    draft_id in (
+      select id from public.manager_drafts where manager_id = auth.uid()
+    )
+  )
+  with check (
     draft_id in (
       select id from public.manager_drafts where manager_id = auth.uid()
     )
@@ -522,8 +552,8 @@ create policy "Authenticated delete own generated-posters"
 -- 1. Go to Authentication → Email Templates and customise if needed.
 -- 2. For local dev, disable email confirmation:
 --    Authentication → Settings → "Enable email confirmations" → OFF
--- 3. Create at least one school row for your manager user so the
---    manager workflow can attach teams/athletes/schedules to it.
+-- 3. Create at least one school row for your designer user (manager_id = their UUID) so
+--    /designer/program can attach teams/athletes/schedules to it.
 -- 4. Storage: generation-references = reference uploads for FLUX; generated-posters =
 --    archived outputs from Save/Publish. Re-run storage sections if you add buckets later.
 --    ensure NEXT_PUBLIC_SUPABASE_URL in .env matches this project.

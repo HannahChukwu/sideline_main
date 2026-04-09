@@ -16,9 +16,9 @@
 
 ---
 
-## Part 2 — Get your manager user ID
+## Part 2 — Get your designer user ID
 
-You need the UUID of the user who will act as the manager (designer).
+You need the UUID of the user who will own the school data (designer account).
 
 1. In the Supabase Dashboard left sidebar, go to **Authentication** → **Users**.
 
@@ -27,7 +27,7 @@ You need the UUID of the user who will act as the manager (designer).
 3. Copy the **User UID** (a UUID like `a1b2c3d4-e5f6-7890-abcd-ef1234567890`).  
    If you haven’t created a user yet, sign up once in your app (e.g. via Google or email), then come back and copy that user’s UID.
 
-4. (Optional) Ensure that user has role **designer** so they can use the manager flow:
+4. (Optional) Ensure that user has role **designer** so they can use the designer portal:
    - In **Table Editor** → **profiles**, find the row with `id` = that User UID and set `role` to `designer` if it isn’t already.
 
 ---
@@ -38,7 +38,7 @@ You need the UUID of the user who will act as the manager (designer).
 
 2. Paste the contents of `supabase-seed-school.sql` (see below or the file in the repo).
 
-3. In that SQL, **replace** the placeholder `YOUR_MANAGER_USER_UID` with the actual User UID you copied (keep the single quotes).
+3. In that SQL, **replace** the placeholder `YOUR_DESIGNER_USER_UID` with the actual User UID you copied (keep the single quotes).
 
 4. Click **Run**.
 
@@ -48,12 +48,26 @@ You need the UUID of the user who will act as the manager (designer).
 
 ## Part 4 — Verify in the app
 
-1. Start your app (`npm run dev`) and sign in as that manager user.
+1. Start your app (`npm run dev`) and sign in as that designer user.
 
-2. Go to **/manager** (or “Manager Demo” on the home page).
+2. Open **Team** (`/designer/team`) — under **Teams, players & schedules** you should see your school’s team (e.g. “Ridgeline High — Lions • Football • 2025-2026”) from Supabase.
 
-3. In the **Team** step you should see your school’s team (e.g. “Ridgeline High — Lions • Football • 2025-2026”) from Supabase instead of only mock data.
+3. Use **Generator** (`/designer/create`) to pick that team, athletes, and a match after you’ve imported a schedule.
 
 If you still see only mock teams, double-check:
 - The user you’re signed in as has the same User UID you used in the seed.
 - RLS is enabled and the policies ran (Part 1). You can inspect tables in **Table Editor** and confirm the `schools` and `teams` rows exist.
+
+### “Add team” fails (RLS / permission)
+
+If the Team page shows a database or RLS error when adding a school or team, re-apply the **`WITH CHECK`** clauses from the latest `supabase-schema.sql` (policies **Managers can manage own school**, **Managers can manage teams for own school**, **athletes**, **schedules**). In the SQL Editor, run the `DROP POLICY` / `CREATE POLICY` blocks for those four names so **inserts** are explicitly allowed for the school owner.
+
+Also confirm you are **signed in** as a designer; expired sessions produce RLS denials. Sign out and back in if needed.
+
+### Schedule import: “Could not find the 'updated_at' column of 'schedules'”
+
+Your `schedules` table may predate an `updated_at` column. The app **does not send** `updated_at` on import anymore (defaults apply when the column exists). If you still want the column, run **`supabase-migration-schedules-updated-at.sql`** once.
+
+### “Infinite recursion detected in policy for relation schools”
+
+That happens when policies on `schools` and `teams` reference each other through subqueries under RLS. Run **`supabase-fix-rls-recursion.sql`** once in the SQL Editor (it adds `school_managed_by_user` / `team_managed_by_user` and updates the **teams**, **athletes**, **schedules**, and **logos** manager policies). Fresh installs already include this in `supabase-schema.sql` section 5.

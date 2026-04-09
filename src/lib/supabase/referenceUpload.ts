@@ -25,7 +25,7 @@ function extForMime(mime: string): string {
 }
 
 /**
- * Upload a reference image for FLUX `input_images`. Caller must be authenticated;
+ * Upload a reference image for Replicate `image_input` (e.g. Nano Banana Pro). Caller must be authenticated;
  * object path is scoped under `userId`.
  */
 export async function uploadGenerationReference(

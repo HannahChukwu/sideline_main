@@ -117,9 +117,27 @@ export const MOCK_ASSETS: Asset[] = [
 ];
 
 export const SPORTS = [
-  "Basketball", "Soccer", "Football", "Baseball", "Softball",
-  "Volleyball", "Swimming", "Track & Field", "Tennis", "Wrestling",
-  "Cross Country", "Golf", "Lacrosse", "Field Hockey",
+  "Basketball",
+  "Soccer",
+  "Football",
+  "Squash",
+  "Baseball",
+  "Softball",
+  "Volleyball",
+  "Swimming",
+  "Tennis",
+  "Track & Field",
+  "Wrestling",
+  "Cross Country",
+  "Golf",
+  "Lacrosse",
+  "Field Hockey",
+  "Ice Hockey",
+  "Water Polo",
+  "Badminton",
+  "Rowing",
+  "Fencing",
+  "Gymnastics",
 ];
 
 export const ASSET_TYPES: { value: AssetType; label: string }[] = [

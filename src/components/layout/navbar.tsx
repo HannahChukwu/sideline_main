@@ -27,6 +27,7 @@ const studentLinks = [
 
 const designerLinks = [
   { href: "/designer", label: "Dashboard" },
+  { href: "/designer/team", label: "Team" },
   { href: "/designer/create", label: "Generator" },
   { href: "/scores", label: "Scores" },
 ];
@@ -102,20 +103,24 @@ export function Navbar({ role, userEmail }: NavbarProps) {
 
         {/* Nav links */}
         <nav className="flex items-center gap-1">
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={cn(
-                "px-4 py-1.5 rounded-md text-sm font-bold tracking-tight transition-all",
-                pathname === link.href
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-              )}
-            >
-              {link.label}
-            </Link>
-          ))}
+          {links.map((link) => {
+            const active =
+              link.href === "/designer/create"
+                ? pathname.startsWith("/designer/create")
+                : pathname === link.href;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={cn(
+                  "px-4 py-1.5 rounded-md text-sm font-bold tracking-tight transition-all",
+                  active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                )}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* Right side: role badge + user + sign out */}

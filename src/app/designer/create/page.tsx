@@ -1,7 +1,27 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { ArrowLeft, Sparkles, Loader2, Download, Share2, RefreshCw, Wand2, Send, MessageSquare, CheckCircle, Clock, ChevronDown, ChevronUp, FlaskConical, ImagePlus, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Sparkles,
+  Loader2,
+  Download,
+  Share2,
+  RefreshCw,
+  Wand2,
+  Send,
+  MessageSquare,
+  CheckCircle,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  FlaskConical,
+  ImagePlus,
+  X,
+  Check,
+  Users,
+  Calendar,
+} from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -13,10 +33,16 @@ import {
   uploadGenerationReference,
   uploadGeneratedPosterFromUrl,
 } from "@/lib/supabase/referenceUpload";
-import { getTeamsForManager } from "@/lib/supabase/teams";
+import { getTeamsForDesigner } from "@/lib/supabase/teams";
+import { getAthletesForTeam } from "@/lib/supabase/athletes";
 import { getSchedulesForTeam, type ScheduleRow } from "@/lib/supabase/schedules";
-import type { Team } from "@/lib/pipeline/types";
+import type { Athlete, Team } from "@/lib/pipeline/types";
+import { Button } from "@/components/ui/button";
 import { applyScheduleRowToPosterForm, formatScheduleRowOptionLabel } from "@/lib/schedule/applyScheduleToForm";
+import {
+  REPLICATE_IMAGE_MODEL_ID,
+  REPLICATE_IMAGE_MODEL_LABEL,
+} from "@/lib/imageGen/replicateImageModel";
 
 interface FormState {
   type: AssetType;
@@ -125,7 +151,7 @@ export default function CreateAsset() {
     lighting: "",
     mood: "",
   });
-  /** Order: athlete, home logo, away logo — matches API / FLUX image 1–3. */
+  /** Order: athlete, home logo, away logo — matches API image_input order (image 1–3). */
   const [refAthleteFile, setRefAthleteFile] = useState<File | null>(null);
   const [refHomeLogoFile, setRefHomeLogoFile] = useState<File | null>(null);
   const [refAwayLogoFile, setRefAwayLogoFile] = useState<File | null>(null);
@@ -161,11 +187,17 @@ export default function CreateAsset() {
   const [saveState, setSaveState] = useState<null | "saving" | "published" | "draft">(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(false);
-  const [managerTeams, setManagerTeams] = useState<Team[]>([]);
-  const [scheduleTeamId, setScheduleTeamId] = useState<string | null>(null);
-  const [scheduleRows, setScheduleRows] = useState<ScheduleRow[]>([]);
-  const [schedulePickId, setSchedulePickId] = useState<string | null>(null);
-  const [scheduleLoadError, setScheduleLoadError] = useState<string | null>(null);
+  const [schoolTeams, setSchoolTeams] = useState<Team[]>([]);
+
+  /** Context wizard: team → featured athletes → match, then full generator. */
+  const [ctxComplete, setCtxComplete] = useState(false);
+  const [ctxStep, setCtxStep] = useState<1 | 2 | 3>(1);
+  const [genTeamId, setGenTeamId] = useState<string | null>(null);
+  const [genAthleteIds, setGenAthleteIds] = useState<string[]>([]);
+  const [genMatchId, setGenMatchId] = useState<string | null>(null);
+  const [ctxRoster, setCtxRoster] = useState<Athlete[]>([]);
+  const [ctxMatchRows, setCtxMatchRows] = useState<ScheduleRow[]>([]);
+  const [ctxMatchErr, setCtxMatchErr] = useState<string | null>(null);
   // Instagram integration state
   const [igConnected, setIgConnected] = useState<boolean | null>(null);
   const [igUserId, setIgUserId] = useState<string | null>(null);
@@ -197,51 +229,96 @@ export default function CreateAsset() {
   useEffect(() => {
     let cancelled = false;
     if (!signedIn) {
-      setManagerTeams([]);
+      setSchoolTeams([]);
       return;
     }
-    getTeamsForManager(supabase)
+    getTeamsForDesigner(supabase)
       .then((list) => {
-        if (!cancelled) setManagerTeams(list);
+        if (!cancelled) setSchoolTeams(list);
       })
       .catch(() => {
-        if (!cancelled) setManagerTeams([]);
+        if (!cancelled) setSchoolTeams([]);
       });
     return () => {
       cancelled = true;
     };
   }, [signedIn, supabase]);
 
-  useEffect(() => {
-    if (managerTeams.length !== 1 || scheduleTeamId) return;
-    setScheduleTeamId(managerTeams[0].id);
-  }, [managerTeams, scheduleTeamId]);
+  const showContextWizard = signedIn && schoolTeams.length > 0 && !ctxComplete;
 
   useEffect(() => {
-    let cancelled = false;
-    if (!scheduleTeamId) {
-      setScheduleRows([]);
-      setSchedulePickId(null);
-      setScheduleLoadError(null);
+    if (!showContextWizard || genTeamId) return;
+    if (schoolTeams.length === 1) setGenTeamId(schoolTeams[0].id);
+  }, [showContextWizard, genTeamId, schoolTeams]);
+
+  useEffect(() => {
+    if (!genTeamId) {
+      setCtxRoster([]);
+      setCtxMatchRows([]);
+      setCtxMatchErr(null);
       return;
     }
-    getSchedulesForTeam(supabase, scheduleTeamId)
+    let cancelled = false;
+    getAthletesForTeam(supabase, genTeamId)
+      .then((list) => {
+        if (!cancelled) setCtxRoster(list);
+      })
+      .catch(() => {
+        if (!cancelled) setCtxRoster([]);
+      });
+    getSchedulesForTeam(supabase, genTeamId)
       .then((rows) => {
         if (!cancelled) {
-          setScheduleRows(rows);
-          setScheduleLoadError(null);
+          setCtxMatchRows(rows);
+          setCtxMatchErr(null);
         }
       })
       .catch((e) => {
         if (!cancelled) {
-          setScheduleRows([]);
-          setScheduleLoadError(e instanceof Error ? e.message : "Could not load schedule");
+          setCtxMatchRows([]);
+          setCtxMatchErr(e instanceof Error ? e.message : "Could not load schedule");
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [scheduleTeamId, supabase]);
+  }, [genTeamId, supabase]);
+
+  const featuredAthleteNames = useMemo(() => {
+    const set = new Set(genAthleteIds);
+    return ctxRoster.filter((a) => set.has(a.id)).map((a) => a.fullName);
+  }, [ctxRoster, genAthleteIds]);
+
+  function toggleFeaturedAthlete(id: string) {
+    setGenAthleteIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  function selectTeamForCtx(id: string) {
+    setGenTeamId(id);
+    setGenAthleteIds([]);
+    setGenMatchId(null);
+  }
+
+  function finishContextWizard() {
+    if (genTeamId && genMatchId) {
+      const team = schoolTeams.find((t) => t.id === genTeamId);
+      const row = ctxMatchRows.find((r) => r.id === genMatchId);
+      if (team && row) {
+        const patch = applyScheduleRowToPosterForm(team, row);
+        setForm((f) => ({
+          ...f,
+          ...patch,
+          type: row.final ? "final-score" : f.type === "final-score" ? "gameday" : f.type,
+        }));
+      }
+    } else if (genTeamId) {
+      const team = schoolTeams.find((t) => t.id === genTeamId);
+      if (team) {
+        setForm((f) => ({ ...f, sport: team.sport }));
+      }
+    }
+    setCtxComplete(true);
+  }
 
   const isScoreType = form.type === "final-score";
 
@@ -557,7 +634,7 @@ export default function CreateAsset() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+      <Navbar role="designer" />
 
       <main className="pt-20 px-6 pb-16 max-w-6xl mx-auto">
         <div className="pt-8 mb-8 flex items-center gap-4">
@@ -568,7 +645,7 @@ export default function CreateAsset() {
             <ArrowLeft className="w-4 h-4" /> Back
           </Link>
           <span className="text-muted-foreground/30">/</span>
-          <span className="text-sm text-muted-foreground">Create Asset</span>
+          <span className="text-sm text-muted-foreground">Generator</span>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -578,110 +655,219 @@ export default function CreateAsset() {
             {/* Header + Dev mode toggle */}
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h1 className="text-2xl font-bold mb-1">Generate Asset</h1>
+                <h1 className="text-2xl font-bold mb-1">Generator</h1>
                 <p className="text-sm text-muted-foreground">
-                  Pick a format, then describe your vision — or expand optional settings for fine control.
+                  {showContextWizard
+                    ? "Choose team, featured athletes, and match — then build your poster."
+                    : "Pick a format, then describe your vision — or expand optional settings for fine control."}
+                </p>
+                <p className="text-xs text-muted-foreground mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-primary/70" aria-hidden />
+                  <span className="text-muted-foreground/90">Image model</span>
+                  <span className="font-mono text-[11px] text-foreground/85 bg-muted/40 border border-border/40 rounded px-1.5 py-0.5">
+                    {REPLICATE_IMAGE_MODEL_ID}
+                  </span>
+                  <span className="text-muted-foreground/70">({REPLICATE_IMAGE_MODEL_LABEL})</span>
                 </p>
               </div>
-              <button
-                onClick={() => setDevMode((v) => !v)}
-                title="Toggle dev/mock mode"
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold shrink-0 transition-all ${
-                  devMode
-                    ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
-                    : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <FlaskConical className="w-3.5 h-3.5" />
-                {devMode ? "Mock ON" : "Mock"}
-              </button>
+              {(!showContextWizard || ctxComplete) && (
+                <button
+                  onClick={() => setDevMode((v) => !v)}
+                  title="Toggle dev/mock mode"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold shrink-0 transition-all ${
+                    devMode
+                      ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                      : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <FlaskConical className="w-3.5 h-3.5" />
+                  {devMode ? "Mock ON" : "Mock"}
+                </button>
+              )}
             </div>
 
-            {devMode && (
+            {step !== "result" && signedIn && schoolTeams.length === 0 && (
+              <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-4 text-sm text-amber-200/90">
+                Add teams, players, and schedules on the{" "}
+                <Link href="/designer/team" className="font-semibold text-primary hover:underline">
+                  Team
+                </Link>{" "}
+                tab first. You can still use the controls below manually if you prefer.
+              </div>
+            )}
+
+            {(!showContextWizard || ctxComplete) && devMode && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20 text-xs text-amber-400">
                 <FlaskConical className="w-3.5 h-3.5 shrink-0" />
                 Dev mode — generation uses a placeholder poster instantly. No API calls.
               </div>
             )}
 
-            {step !== "result" && signedIn && managerTeams.length > 0 && (
-              <div className="rounded-xl border border-primary/25 bg-primary/[0.06] p-4 space-y-3">
-                <div>
-                  <p className="text-xs font-semibold text-foreground uppercase tracking-wider">Pick from schedule</p>
-                  <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                    After you import the Excel or CSV schedule in{" "}
-                    <Link href="/manager" className="text-primary hover:underline">
-                      Manager
-                    </Link>
-                    , choose your team and a game to fill in match details (you can still edit them below).
-                  </p>
+            {step !== "result" && showContextWizard && (
+              <div className="rounded-xl border border-primary/30 bg-primary/[0.06] p-5 space-y-4">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wider">
+                  <span className={ctxStep === 1 ? "text-primary" : "text-muted-foreground"}>1 · Team</span>
+                  <span className="text-muted-foreground/40">→</span>
+                  <span className={ctxStep === 2 ? "text-primary" : "text-muted-foreground"}>2 · Athletes</span>
+                  <span className="text-muted-foreground/40">→</span>
+                  <span className={ctxStep === 3 ? "text-primary" : "text-muted-foreground"}>3 · Match</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                      Team
-                    </label>
-                    <select
-                      value={scheduleTeamId ?? ""}
-                      onChange={(e) => {
-                        const id = e.target.value || null;
-                        setScheduleTeamId(id);
-                        setSchedulePickId(null);
-                      }}
-                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/40"
-                    >
-                      <option value="">Select team…</option>
-                      {managerTeams.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {[t.schoolName, t.teamName].filter(Boolean).join(" · ") || t.teamName}
-                        </option>
-                      ))}
-                    </select>
+
+                {ctxStep === 1 && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground flex items-center gap-2">
+                      <Users className="w-3.5 h-3.5" />
+                      Which team is this asset for?
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {schoolTeams.map((t) => {
+                        const active = genTeamId === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => selectTeamForCtx(t.id)}
+                            className={`text-left rounded-xl border p-3 text-sm transition-all ${
+                              active
+                                ? "border-primary/40 bg-primary/10 text-primary"
+                                : "border-border/50 bg-card text-foreground hover:border-border"
+                            }`}
+                          >
+                            <div className="font-semibold">
+                              {[t.schoolName, t.teamName].filter(Boolean).join(" · ") || t.teamName}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {t.sport} · {t.season}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                      Game
-                    </label>
-                    <select
-                      value={schedulePickId ?? ""}
-                      disabled={!scheduleTeamId || scheduleRows.length === 0}
-                      onChange={(e) => {
-                        const id = e.target.value || null;
-                        setSchedulePickId(id);
-                        if (!id || !scheduleTeamId) return;
-                        const team = managerTeams.find((t) => t.id === scheduleTeamId);
-                        const row = scheduleRows.find((r) => r.id === id);
-                        if (!team || !row) return;
-                        const patch = applyScheduleRowToPosterForm(team, row);
-                        setForm((f) => ({
-                          ...f,
-                          ...patch,
-                          type: row.final ? "final-score" : f.type === "final-score" ? "gameday" : f.type,
-                        }));
-                      }}
-                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/40 disabled:opacity-50"
-                    >
-                      <option value="">
-                        {!scheduleTeamId ? "Select a team first…" : scheduleRows.length === 0 ? "No games yet — import schedule in Manager" : "Select game…"}
-                      </option>
-                      {scheduleTeamId &&
-                        scheduleRows.map((row) => {
-                          const team = managerTeams.find((t) => t.id === scheduleTeamId)!;
+                )}
+
+                {ctxStep === 2 && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Select one or more athletes to feature (reference prompts can follow their photos below).
+                    </p>
+                    {ctxRoster.length === 0 ? (
+                      <p className="text-xs text-destructive">
+                        No players on this roster yet. Add them on the Team tab, or go back and pick another team.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {ctxRoster.map((a) => {
+                          const on = genAthleteIds.includes(a.id);
                           return (
-                            <option key={row.id} value={row.id}>
-                              {formatScheduleRowOptionLabel(team, row)}
-                            </option>
+                            <button
+                              key={a.id}
+                              type="button"
+                              onClick={() => toggleFeaturedAthlete(a.id)}
+                              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-all ${
+                                on
+                                  ? "border-primary/40 bg-primary/15 text-primary"
+                                  : "border-border/50 bg-card text-muted-foreground hover:border-border"
+                              }`}
+                            >
+                              {on && <Check className="w-3.5 h-3.5" />}
+                              {a.fullName}
+                              {a.number ? ` · #${a.number}` : ""}
+                            </button>
                           );
                         })}
-                    </select>
+                      </div>
+                    )}
                   </div>
-                </div>
-                {scheduleLoadError && (
-                  <p className="text-xs text-destructive">{scheduleLoadError}</p>
                 )}
+
+                {ctxStep === 3 && genTeamId && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground flex items-center gap-2">
+                      <Calendar className="w-3.5 h-3.5" />
+                      Pick the match to pre-fill date, time, venue, and opponent (from your uploaded schedule).
+                    </p>
+                    <select
+                      value={genMatchId ?? ""}
+                      onChange={(e) => setGenMatchId(e.target.value || null)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/40"
+                    >
+                      <option value="">
+                        {ctxMatchRows.length === 0
+                          ? "No games yet — import schedule on Team tab"
+                          : "Select match…"}
+                      </option>
+                      {ctxMatchRows.map((row) => {
+                        const team = schoolTeams.find((t) => t.id === genTeamId)!;
+                        return (
+                          <option key={row.id} value={row.id}>
+                            {formatScheduleRowOptionLabel(team, row)}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    {ctxMatchErr && <p className="text-xs text-destructive">{ctxMatchErr}</p>}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/30">
+                  <button
+                    type="button"
+                    onClick={() => setCtxComplete(true)}
+                    className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                  >
+                    Skip setup — fill everything manually
+                  </button>
+                  <div className="flex-1 min-w-[8rem]" />
+                  {ctxStep > 1 && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setCtxStep((s) => (s === 2 ? 1 : 2))}>
+                      Back
+                    </Button>
+                  )}
+                  {ctxStep === 1 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!genTeamId}
+                      onClick={() => setCtxStep(2)}
+                    >
+                      Continue
+                    </Button>
+                  )}
+                  {ctxStep === 2 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={genAthleteIds.length === 0}
+                      onClick={() => setCtxStep(3)}
+                    >
+                      Continue
+                    </Button>
+                  )}
+                  {ctxStep === 3 && (
+                    <Button type="button" size="sm" onClick={() => finishContextWizard()}>
+                      Continue to generator
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
 
+            {ctxComplete && signedIn && schoolTeams.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCtxComplete(false);
+                  setCtxStep(1);
+                }}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                Edit team / athletes / match
+              </button>
+            )}
+
+            {(!showContextWizard || ctxComplete) && (
+            <>
             {/* ── Output Format (ALWAYS SHOWN — required) ─── */}
             <div>
               <label className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3 block">
@@ -741,7 +927,7 @@ export default function CreateAsset() {
               </div>
             )}
 
-            {/* ── Reference images (FLUX) — athlete + optional logos ─── */}
+            {/* ── Reference images — athlete + optional logos (Replicate image_input) ─── */}
             {step !== "result" && (
               <div className="rounded-xl border border-border/50 bg-card/40 p-4 space-y-3">
                 <div className="flex items-start gap-2">
@@ -754,6 +940,12 @@ export default function CreateAsset() {
                       <span className="text-foreground/80">3 — Away logo</span>. JPEG/PNG/GIF/WebP, max 5MB each. Sign in
                       required. You are responsible for rights and accuracy of logos.
                     </p>
+                    {featuredAthleteNames.length > 0 && (
+                      <p className="text-[11px] text-primary/80 mt-2">
+                        Selected for this asset: {featuredAthleteNames.join(", ")} — upload their photo in slot 1 if you
+                        want likeness in the poster.
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1108,6 +1300,8 @@ export default function CreateAsset() {
               <div className="px-3.5 py-2.5 rounded-xl bg-destructive/10 border border-destructive/20 text-xs text-destructive font-medium">
                 {generateError}
               </div>
+            )}
+            </>
             )}
           </div>
 

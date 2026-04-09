@@ -13,7 +13,8 @@ type TeamRow = {
   schools: { name: string } | null;
 };
 
-export async function getTeamsForManager(
+/** Teams under schools owned by the signed-in designer (`schools.manager_id`; RLS-enforced). */
+export async function getTeamsForDesigner(
   supabase: Client
 ): Promise<Team[]> {
   const { data, error } = await supabase
@@ -33,6 +34,39 @@ export async function getTeamsForManager(
   }));
 }
 
+export async function createTeamForDesigner(
+  supabase: Client,
+  input: {
+    school_id: string;
+    /** Pass from the school row so we avoid a nested `schools()` select on RETURNING (RLS/embed edge cases). */
+    school_name?: string;
+    team_name: string;
+    sport: string;
+    season: string;
+  }
+): Promise<Team> {
+  const { data, error } = await supabase
+    .from("teams")
+    .insert({
+      school_id: input.school_id,
+      team_name: input.team_name.trim(),
+      sport: input.sport.trim(),
+      season: input.season.trim(),
+    })
+    .select("id, team_name, sport, season, school_id")
+    .single();
+
+  if (error) throw error;
+  const row = data as { id: string; team_name: string; sport: string; season: string; school_id: string };
+  return {
+    id: row.id,
+    schoolName: input.school_name?.trim() ?? "",
+    teamName: row.team_name,
+    sport: row.sport,
+    season: row.season,
+  };
+}
+
 export type TeamDisplay = {
   id: string;
   schoolName: string;
@@ -41,7 +75,7 @@ export type TeamDisplay = {
   season: string;
 };
 
-/** Name row for dashboards; allowed by RLS for managers and for athletes linked via profiles.team_id. */
+/** Name row for dashboards; allowed by RLS for school owners and for athletes linked via profiles.team_id. */
 export async function getTeamDisplayForViewer(supabase: Client, teamId: string): Promise<TeamDisplay | null> {
   const { data, error } = await supabase
     .from("teams")

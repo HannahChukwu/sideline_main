@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types";
-import { getTeamsForManager } from "./teams";
+import { getTeamsForDesigner } from "./teams";
 
 function mockSupabase(result: { data: unknown; error: unknown }) {
   const chain = {
@@ -13,7 +13,7 @@ function mockSupabase(result: { data: unknown; error: unknown }) {
   } as unknown as SupabaseClient<Database>;
 }
 
-describe("getTeamsForManager", () => {
+describe("getTeamsForDesigner", () => {
   it("maps joined school name", async () => {
     const supabase = mockSupabase({
       error: null,
@@ -28,7 +28,7 @@ describe("getTeamsForManager", () => {
         },
       ],
     });
-    const teams = await getTeamsForManager(supabase);
+    const teams = await getTeamsForDesigner(supabase);
     expect(teams).toEqual([
       {
         id: "t1",
@@ -54,12 +54,12 @@ describe("getTeamsForManager", () => {
         },
       ],
     });
-    const teams = await getTeamsForManager(supabase);
+    const teams = await getTeamsForDesigner(supabase);
     expect(teams[0]?.schoolName).toBe("");
   });
 
   it("throws on Supabase error", async () => {
     const supabase = mockSupabase({ data: null, error: new Error("db") });
-    await expect(getTeamsForManager(supabase)).rejects.toThrow("db");
+    await expect(getTeamsForDesigner(supabase)).rejects.toThrow("db");
   });
 });

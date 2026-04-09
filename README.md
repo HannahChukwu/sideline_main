@@ -22,20 +22,19 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
 
 - **Landing** (`/`): branded entry page with sign in/sign up links. Live at [sideline-main.vercel.app](https://sideline-main.vercel.app/).
 - **Auth** (`/auth` + `/auth/callback`): email/password + OAuth callback handling.
-- **Designer dashboard** (`/designer`): asset list, status filtering, basic personal stats; **school teams** you manage (from Supabase); **team schedule** preview (games imported in Manager); **Copy athlete invite link** (signed, time-limited URL for linking athlete/student accounts to a team).
-- **Designer create** (`/designer/create`): AI generation form with:
-  - asset types (`gameday`, `final-score`, `poster`, `highlight`)
-  - style, format, optional refinement chat
-  - reference image upload (athlete/home logo/away logo)
-  - **Schedule quick pick** (when signed in as a school manager): choose a team and game to pre-fill teams, date, venue, and time from `schedules`
-  - save/publish flow
-  - UI for Instagram connect/publish (not functional until Meta integration is complete—see **Instagram / Meta status**)
+- **Designer dashboard** (`/designer`): asset grid and stats.
+- **Designer Team** (`/designer/team`): **Teams, players & schedules** (add teams like “Trinity · Men’s Squash”, roster players, one-time CSV/Excel schedule import per team); full schedule preview; **Copy athlete invite link**.
+- **Designer nav** (signed-in designers): **Dashboard**, **Team**, **Generator**, **Scores** — program data is edited on **Team**, not the asset dashboard.
+- **Generator** (`/designer/create`): when you have teams, **team → featured athlete(s) → match** (from your schedule), then the full AI flow:
+  - asset types (`gameday`, `final-score`, `poster`, `highlight`), style, format, refinement chat, reference images (up to 14 URLs from the app’s reference bucket)
+  - shows the active **Replicate image model** in the header (see `src/lib/imageGen/replicateImageModel.ts`; currently **`google/nano-banana-pro`**)
+  - save/publish; Instagram UI (stub)
 - **Athlete portal** (`/athlete`): published content consumption and interaction; header can show the **official linked team** name when `profiles.team_id` is set.
 - **Athlete join** (`/athlete/join?t=…`): redeems a **signed invite** (after sign-in) and sets `profiles.team_id`; unauthenticated users are sent through `/auth` with `next` preserved (see **API routes**).
 - **Student feed** (`/feed`): poster feed + grouped designer updates.
 - **Live scores** (`/scores`): NCAA-backed scoreboard with fallback simulation.
 - **Settings** (`/settings`): profile editing.
-- **Manager flow** (`/manager`, `/manager/editor`): school/team/athlete selection, **schedule import** from **CSV or Excel** (`.xlsx` / `.xls`, first sheet) via column mapping, scores for finalized games, and pipeline into the editor—backed by Supabase `schools`, `teams`, `athletes`, `schedules`.
+- Legacy **`/designer/program`** redirects to **`/designer/team`**; **`/designer/editor`** is the layout editor stub.
 
 ### API routes
 
@@ -44,8 +43,8 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
   - **Rate limits** per user via **Upstash Redis** in production (hourly + daily caps; 503 if Redis env is missing in production)
   - Validates request body with Zod
   - Generates prompt/copy with Anthropic when configured (fallback prompt builder otherwise)
-  - Generates image via Replicate FLUX.2 Pro
-  - Enforces strict sanitization for reference image URLs (must come from this app's Supabase public references bucket)
+  - Generates the poster image via Replicate **`google/nano-banana-pro`** (`prompt`, `image_input`, `aspect_ratio` from format, **`2K`** resolution, PNG output, `safety_filter_level: block_only_high`, optional fallback model if Replicate routes at capacity)
+  - Enforces strict sanitization for reference image URLs (must come from this app's Supabase public **`generation-references`** bucket)
 - **Instagram API (scaffold only—not production-ready)**  
   Route handlers exist (`/api/instagram/connect`, `/oauth/callback`, `/status`, `/publish`) for Meta OAuth, token storage, and Graph publish. **The Meta app / API flow is not wired through successfully yet**, so users cannot complete “Connect Instagram” or post generated images to Instagram from this app. Treat this as future work once Meta app review, redirect URLs, and permissions are sorted.
 - **`POST /api/auth/password-signin`**
@@ -54,7 +53,7 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
   - Fetches NCAA scoreboard data across sports
   - Normalizes, deduplicates, and sorts live/upcoming/final games
   - Falls back to simulated data when NCAA source is unavailable
-- **`POST /api/team-invite`** (authenticated **school manager** only)
+- **`POST /api/team-invite`** (authenticated **school owner** / designer account only)
   - Body: `{ "team_id": "<uuid>" }` for a team under the caller’s school
   - Returns `{ "url", "expires_in_days" }` pointing at `/athlete/join?t=…`
   - Signs tokens with **`TEAM_INVITE_SECRET`** (HMAC-SHA256; **16+ characters**). In production, missing/short secret yields **503**.
@@ -76,10 +75,10 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
 
 - **Database and storage access**  
   **Row Level Security (RLS)** on Postgres tables limits who can read/write rows (see [`supabase-schema.sql`](supabase-schema.sql)). **Storage** policies scope uploads to the authenticated user’s folder (`auth.uid()` as the first path segment). Reference images for AI live in **`generation-references`**; archived generated posters (stable URLs on save) use **`generated-posters`** so reference uploads stay separate from finished assets.  
-  **Schedules and team linking**: managers own `schedules` for their teams; athletes/students with **`profiles.team_id`** set can **read** matching `schedules` rows and the corresponding **`teams`** / **`schools`** rows (for display names)—see policies *Athletes can view own team schedule*, *Members can read linked team*, *Members can read school for linked team* in the schema.
+  **Schedules and team linking**: designers (school owners via `schools.manager_id`) own `schedules` for their teams; athletes/students with **`profiles.team_id`** set can **read** matching `schedules` rows and the corresponding **`teams`** / **`schools`** rows (for display names)—see policies *Athletes can view own team schedule*, *Members can read linked team*, *Members can read school for linked team* in the schema.
 
 - **Athlete invite links**  
-  Invite URLs contain a **signed payload** (team id + expiry); only the server mints tokens (manager-gated) and verifies them on redeem. This avoids exposing long-lived secrets in the link beyond the token itself; **rotate `TEAM_INVITE_SECRET`** if you believe it was leaked (old links become invalid).
+  Invite URLs contain a **signed payload** (team id + expiry); only the server mints tokens (school-owner–gated) and verifies them on redeem. This avoids exposing long-lived secrets in the link beyond the token itself; **rotate `TEAM_INVITE_SECRET`** if you believe it was leaked (old links become invalid).
 
 - **Post-login redirects**  
   The **`next`** query parameter is validated as a same-origin path (no `//…` open redirects) on email sign-in/sign-up and OAuth callback before redirect.
@@ -105,7 +104,7 @@ For more detail, see [`ARCHITECTURE.md`](ARCHITECTURE.md) (API table and securit
 - **Validation**: Zod
 - **State**: Zustand
 - **Rate limiting (production AI)**: Upstash Redis (`@upstash/redis`, `@upstash/ratelimit`)
-- **AI/Integrations**: Replicate, Anthropic; Meta Graph API code paths exist for Instagram but are **not functional** yet
+- **AI/Integrations**: Replicate (**Nano Banana Pro** / `google/nano-banana-pro`), Anthropic; Meta Graph API code paths exist for Instagram but are **not functional** yet
 - **Testing**: Vitest
 
 ## Local Setup
@@ -184,7 +183,7 @@ The production build runs on [Vercel](https://vercel.com) as a standard **Next.j
 
 1. **Connect the repo** in the Vercel dashboard and import this app. If the Git root is the monorepo folder above `sideline_main`, set **Root Directory** to `sideline_main` so Vercel runs `npm run build` from the correct package.
 
-2. **Framework**: Vercel should detect Next.js automatically. The dev script uses `next dev --webpack`; production uses the default `next build` / Node runtime for App Router and API routes.
+2. **Framework**: Vercel should detect Next.js automatically. Both **`npm run dev`** and **`npm run build`** use **`--webpack`** (see `package.json`) so dependencies like `@supabase/ssr` resolve cleanly; production runs the same webpack-based Next build on Vercel’s Node runtime.
 
 3. **Environment variables**: Add the same keys you use locally in **Project → Settings → Environment Variables** (Production / Preview as needed):  
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `REPLICATE_API_TOKEN`, **`UPSTASH_REDIS_REST_URL`**, **`UPSTASH_REDIS_REST_TOKEN`** (required for production generate rate limits—without them, `/api/generate` returns 503), **`TEAM_INVITE_SECRET`** (required for **Copy athlete invite link** in production—without a valid 16+ char secret, `/api/team-invite` returns 503), and optionally `ANTHROPIC_API_KEY`, `GENERATE_RL_PER_HOUR`, `GENERATE_RL_PER_DAY`.  
@@ -215,7 +214,7 @@ After deploy, smoke-test sign-in, protected routes, and `/api/generate` (Replica
 
 - `src/app` - App Router pages and API route handlers
 - `src/components` - feature and UI components
-- `src/lib` - Supabase helpers, auth helpers (`auth/loginLockout`), prompt builders, rate limiting (`rate-limit/`), schedule parsing (`schedule/**`, including **CSV** and **Excel** via `parseExcel.ts` + `xlsx`), **team invite signing** (`team-invite/token.ts`), editor utilities, store
+- `src/lib` - Supabase helpers, auth helpers (`auth/loginLockout`), prompt builders, rate limiting (`rate-limit/`), schedule parsing (`schedule/**`, including **CSV** and **Excel** via `parseExcel.ts` + `xlsx`), **team invite signing** (`team-invite/token.ts`), **Replicate image model id** shared by API + Generator UI (`imageGen/replicateImageModel.ts`), editor utilities, store
 - `src/proxy.ts` - session refresh + route access control
 - `supabase-schema.sql` - schema, RLS, triggers, storage bucket setup
 - `supabase-seed-school.sql` - seed records for school/team/athlete schedule flows
@@ -226,5 +225,5 @@ After deploy, smoke-test sign-in, protected routes, and `/api/generate` (Replica
 
 - **Meta / Instagram**: OAuth and publish routes exist but the integration does not work end-to-end yet—no dependable “connect account → post to IG” flow.
 - Some flows still use local store/demo-style state in UI while the backend model continues to evolve.
-- Manager experience remains in the repo but is no longer highlighted on landing.
+- Teams, rosters, schedule import, and athlete invites live under **`/designer/team`** (navbar **Team**). Legacy **`/designer/program`** redirects there.
 - Dependencies like `next-auth`, Prisma, and React Query exist in `package.json` but are not the primary app path today.

@@ -15,7 +15,8 @@ function originFromRequest(request: Request): string {
 }
 
 /**
- * POST — school managers only. Returns a signed join URL for athletes/students.
+ * POST — school owner (designer account; `schools.manager_id`) only.
+ * Returns a signed join URL for athletes/students.
  */
 export async function POST(request: Request) {
   try {
@@ -44,8 +45,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    const managerId = (row as unknown as { schools: { manager_id: string } }).schools?.manager_id;
-    if (managerId !== user.id) {
+    const ownerId = (row as unknown as { schools: { manager_id: string } }).schools?.manager_id;
+    if (ownerId !== user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

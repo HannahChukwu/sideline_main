@@ -2,6 +2,13 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      { source: "/manager", destination: "/designer", permanent: true },
+      { source: "/manager/editor", destination: "/designer/editor", permanent: true },
+      { source: "/designer/program", destination: "/designer/team", permanent: true },
+    ];
+  },
   reactCompiler: true,
   // Webpack resolves `cookie` for @supabase/ssr to a nested path that npm may not
   // populate when deduping; force the hoisted install (see cookie@1.x for @supabase/ssr).

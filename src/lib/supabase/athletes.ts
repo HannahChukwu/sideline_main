@@ -25,3 +25,16 @@ export async function getAthletesForTeam(
     position: row.position ?? undefined,
   }));
 }
+
+export async function insertAthlete(
+  supabase: Client,
+  input: { team_id: string; full_name: string; number?: string | null; position?: string | null }
+): Promise<void> {
+  const { error } = await supabase.from("athletes").insert({
+    team_id: input.team_id,
+    full_name: input.full_name.trim(),
+    number: input.number?.trim() || null,
+    position: input.position?.trim() || null,
+  });
+  if (error) throw error;
+}

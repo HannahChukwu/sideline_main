@@ -19,7 +19,7 @@ import { compileCaptionPrompt } from "@/lib/prompt/compileCaptionPrompt";
 import { buildCopyFromRequest } from "@/lib/editor/buildCopyFromRequest";
 import { DEFAULT_POST_LAYOUT } from "@/lib/editor/defaultLayout";
 import { createClient } from "@/lib/supabase/client";
-import { getTeamsForManager } from "@/lib/supabase/teams";
+import { getTeamsForDesigner } from "@/lib/supabase/teams";
 import { getAthletesForTeam } from "@/lib/supabase/athletes";
 import { saveManagerDraft as saveManagerDraftToSupabase } from "@/lib/supabase/managerDraft";
 import { getSchedulesForTeam, replaceTeamScheduleFromImport, updateScheduleScore } from "@/lib/supabase/schedules";
@@ -95,7 +95,7 @@ export function PipelineWizard() {
 
   useEffect(() => {
     let cancelled = false;
-    getTeamsForManager(supabase)
+    getTeamsForDesigner(supabase)
       .then((list) => {
         if (!cancelled && list.length > 0) setTeams(list);
       })
@@ -232,7 +232,7 @@ export function PipelineWizard() {
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <div className="text-[10px] font-bold tracking-[0.35em] uppercase text-muted-foreground/60">
-            Manager workflow
+            Program & schedule
           </div>
           <h1 className="text-2xl md:text-3xl font-black tracking-tight mt-1">
             Build a post in minutes
@@ -242,9 +242,14 @@ export function PipelineWizard() {
           </p>
         </div>
 
-        <Button asChild variant="outline">
-          <Link href="/">Back home</Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href="/designer/team">Designer Team</Link>
+          </Button>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/">Home</Link>
+          </Button>
+        </div>
       </div>
 
       <div className="mb-6 flex items-center gap-2 flex-wrap">
@@ -799,7 +804,7 @@ export function PipelineWizard() {
                         editorCopy: buildCopyFromRequest(generationRequest),
                         editorLayout: DEFAULT_POST_LAYOUT,
                       });
-                      router.push("/manager/editor");
+                      router.push("/designer/editor");
                     }}
                   >
                     <Sparkles className="w-4 h-4" />

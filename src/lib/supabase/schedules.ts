@@ -17,6 +17,7 @@ export async function replaceTeamScheduleFromImport(
   const { error: delErr } = await supabase.from("schedules").delete().eq("team_id", teamId);
   if (delErr) throw delErr;
 
+  // Do not send updated_at: older DBs may lack the column; when present, default now() applies.
   const payload: ScheduleInsert[] = events.map((ev) => ({
     team_id: teamId,
     opponent: ev.opponent,
@@ -25,7 +26,6 @@ export async function replaceTeamScheduleFromImport(
     time_text: ev.timeText ?? null,
     location: ev.location ?? null,
     home_away: (ev.homeAway === "home" || ev.homeAway === "away" || ev.homeAway === "neutral") ? ev.homeAway : null,
-    updated_at: new Date().toISOString(),
   }));
 
   if (payload.length === 0) return;
@@ -58,7 +58,6 @@ export async function updateScheduleScore(
       home_score: patch.home_score,
       away_score: patch.away_score,
       final: patch.final,
-      updated_at: new Date().toISOString(),
     })
     .eq("id", scheduleId);
   if (error) throw error;

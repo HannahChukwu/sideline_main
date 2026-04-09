@@ -12,11 +12,11 @@ Sideline is an **AI-assisted athletics marketing** app with **role-based portals
 
 | Role      | Primary routes              | Purpose |
 |-----------|-----------------------------|---------|
-| Designer  | `/designer`, `/designer/create` | Create assets; when the user is also a **school manager**, see managed teams, schedule preview, **signed athlete invite links**, and **schedule quick pick** on create; optional Instagram publish (stub) |
+| Designer  | `/designer`, `/designer/team`, `/designer/create`, `/designer/editor` | **Dashboard**: assets. **Team**: teams/rosters/schedule import, invites, schedule preview. **Generator**: team → athletes → match, then AI create flow. `/designer/program` → `/designer/team`. |
 | Athlete   | `/athlete`, `/athlete/stats`, `/athlete/join` | Review assets; stats; **join** flow sets `profiles.team_id` from an invite token |
 | Student   | `/feed`                     | Browse the public-style feed; may redeem team invites like athletes |
 
-A parallel **manager** workflow (schools, teams, rosters, **schedule import** CSV/Excel, drafts, editor) lives under `/manager` and related Supabase tables; imported **`schedules`** rows feed the designer dashboard, create-page quick pick, and athlete-facing schedule (after linking).
+**Teams, rosters, and schedule import** are edited on **`/designer/team`**. **Generator** (`/designer/create`) consumes that data (match dropdown). **`/designer/editor`** is a stub layout editor. Legacy **`/manager`** redirects to the dashboard; **`/designer/program`** redirects to **`/designer/team`**.
 
 ---
 
@@ -41,7 +41,7 @@ flowchart LR
   end
 
   subgraph external [External services]
-    Replicate[Replicate FLUX]
+    Replicate[Replicate image gen]
     Anthropic[Anthropic API]
     Meta[Meta Graph API - Instagram]
     NCAA[NCAA scoreboard JSON]
@@ -71,7 +71,7 @@ flowchart LR
 | Auth & data | **Supabase** (`@supabase/supabase-js`, `@supabase/ssr`): Auth, Postgres, Row Level Security, Storage |
 | Validation | **Zod** (e.g. `/api/generate` request bodies) |
 | Client state | **Zustand** (persisted local store; complements Supabase-backed pages) |
-| Image generation (server) | **Replicate** (FLUX family); prompts may involve **Anthropic** per route implementation |
+| Image generation (server) | **Replicate** (`google/nano-banana-pro`); prompts may involve **Anthropic** per route implementation |
 | Optional / listed in package.json | `next-auth`, `@prisma/client`, `@tanstack/react-query` are present as dependencies but **not wired** through the current application source |
 
 Build tooling includes **ESLint**, **Vitest** for unit tests under `src/lib/**`, and the **React Compiler** enabled in `next.config.ts`.
@@ -85,10 +85,9 @@ src/
   app/                 # App Router: layouts, pages, route handlers
     api/               # Server-only HTTP handlers (generate, team-invite, Instagram, live scores, …)
     auth/              # Sign-in UI + OAuth callback route
-    designer/          # Designer portal + asset creation
+    designer/          # Portal: dashboard, team setup, create, editor
     athlete/           # Portal, stats, join (invite redemption)
     feed/              # Student feed
-    manager/           # School/team/schedule + editor pipeline
     settings/          # Profile settings
   components/          # Feature UI (navbar, editor, schedule importer, pipeline wizard)
   lib/
@@ -132,16 +131,16 @@ Canonical schema is **`supabase-schema.sql`**. Major groupings:
 - **`auth.users`** — Supabase-managed identities.
 - **`public.profiles`** — `id` → `auth.users`, `role` (`designer` \| `athlete` \| `student`), `full_name`, `email`, optional **`team_id`** → `teams.id`. For **athletes/students**, `team_id` is set via **`/athlete/join`** (invite redemption) or manual update; it gates **`schedules`** / linked **`teams`** / **`schools`** reads under RLS. Populated by trigger **`handle_new_user`** from signup metadata (team unset until join).
 
-### 5.2 Manager / program data
+### 5.2 Designer program data
 
-Scoped to a **school owner** (`schools.manager_id`):
+Scoped to a **school owner** (designer account; column **`schools.manager_id`** = that user’s UUID):
 
-- **`schools`**, **`teams`**, **`athletes`**, **`schedules`** — roster and calendar data; schedules are usually replaced on import from **CSV/Excel** in the manager UI.
+- **`schools`**, **`teams`**, **`athletes`**, **`schedules`** — roster and calendar data; schedules are usually replaced on import from **CSV/Excel** on **`/designer/team`**.
 - **`logos`** — metadata rows pointing at Storage paths.
-- **`manager_drafts`** — persisted generation requests, compiled prompts, editor JSON.
+- **`manager_drafts`** — persisted generation requests, compiled prompts, editor JSON (table name is legacy; used from **`/designer/editor`**).
 - **`draft_reference_images`** — reference assets tied to drafts.
 
-RLS: **managers** have full CRUD on their school’s teams, athletes, schedules, etc. Additional **SELECT** policies allow **authenticated users** who have **`profiles.team_id`** equal to a team to read that **`teams`** row, its **`schools`** row (for labels), and **`schedules`** for that team—so linked athletes can see names and the official game list without being managers.
+RLS: **school owners** have full CRUD on their school’s teams, athletes, schedules, etc. Additional **SELECT** policies allow **authenticated users** who have **`profiles.team_id`** equal to a team to read that **`teams`** row, its **`schools`** row (for labels), and **`schedules`** for that team—so linked athletes can see names and the official game list without owning the school.
 
 ### 5.3 Published content and engagement
 
@@ -171,7 +170,7 @@ Reference uploads for generation use a dedicated bucket (see `GENERATION_REFEREN
 | **`POST /api/team-invite/redeem`** | Validates token (HMAC + expiry); session user must be **`athlete`** or **`student`**; updates **`profiles.team_id`**. |
 | **Instagram** (`/api/instagram/*`) | OAuth connect/callback, connection status, and **publish** (Graph API: create media + publish) using decrypted tokens from `instagram_accounts`. |
 
-Other pages call Supabase **directly from the browser or server** for CRUD on profiles, assets, and manager entities, relying on RLS for authorization.
+Other pages call Supabase **directly from the browser or server** for CRUD on profiles, assets, and program entities, relying on RLS for authorization.
 
 ---
 
@@ -188,12 +187,12 @@ Other pages call Supabase **directly from the browser or server** for CRUD on pr
 
 ## 8. Security model
 
-- **RLS** is the primary enforcement mechanism for multi-tenant data (managers vs each other; users vs profiles).
+- **RLS** is the primary enforcement mechanism for multi-tenant data (school owners vs each other; users vs profiles).
 - **Anon key** is used in browser and server clients; no service-role client appears required for normal user flows in the documented schema.
 - **Instagram tokens** are stored encrypted; decryption happens only on the server for publish.
 - **Generate route** requires a signed-in user, enforces reference images to known Supabase paths (SSRF/open proxy), and rate-limits generations per user in production (Upstash).
 - **Password sign-in** uses `POST /api/auth/password-signin` plus Upstash-backed lockout (5 failures → 10-minute cooldown per email).
-- **Team invites**: minting is **manager-only** (verified via Supabase read on `teams` + embedded `schools.manager_id`). Tokens are **HMAC-signed**; **redeem** checks role (**athlete** / **student** only). **`TEAM_INVITE_SECRET`** must be long and server-only; missing/weak secret disables minting in production (**503**).
+- **Team invites**: minting is **school-owner–only** (verified via Supabase read on `teams` + embedded `schools.manager_id`). Tokens are **HMAC-signed**; **redeem** checks role (**athlete** / **student** only). **`TEAM_INVITE_SECRET`** must be long and server-only; missing/weak secret disables minting in production (**503**).
 - **OAuth and email flows**: redirect targets from **`next`** are restricted to same-origin relative paths to reduce open-redirect risk.
 
 ---

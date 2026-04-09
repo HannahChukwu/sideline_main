@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RotateCcw } from "lucide-react";
 
+import { Navbar } from "@/components/layout/navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -28,12 +29,12 @@ const DEFAULT_COPY: PostCopy = {
   footer: "Powered by SIDELINE",
 };
 
-export default function ManagerEditorPage() {
+export default function DesignerEditorPage() {
   const [layout, setLayout] = useState<PostLayout>(DEFAULT_POST_LAYOUT);
   const [copy, setCopy] = useState<PostCopy>(DEFAULT_COPY);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draftPayload, setDraftPayload] = useState<ManagerDraftPayload | null>(null);
-  const [managerId, setManagerId] = useState<string | null>(null);
+  const [designerId, setDesignerId] = useState<string | null>(null);
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export default function ManagerEditorPage() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (cancelled) return;
       if (user) {
-        setManagerId(user.id);
+        setDesignerId(user.id);
         loadManagerDraft(supabase, user.id)
           .then((draft) => {
             if (cancelled || !draft) return;
@@ -74,12 +75,14 @@ export default function ManagerEditorPage() {
   const selectedKey = selectedEl?.key ?? null;
 
   return (
-    <div className="min-h-screen px-6 py-10 max-w-6xl mx-auto">
+    <div className="min-h-screen bg-background">
+      <Navbar role="designer" />
+      <div className="pt-20 px-6 py-10 max-w-6xl mx-auto">
       <div className="mb-6 flex items-center justify-between gap-4">
         <Button asChild variant="outline">
-          <Link href="/manager">
+          <Link href="/designer/program">
             <ArrowLeft className="w-4 h-4" />
-            Back to pipeline
+            Back to program
           </Link>
         </Button>
 
@@ -91,7 +94,7 @@ export default function ManagerEditorPage() {
             setCopy(DEFAULT_COPY);
             setSelectedId(null);
             setDraftPayload(null);
-            if (managerId) await clearManagerDraft(supabase, managerId);
+            if (designerId) await clearManagerDraft(supabase, designerId);
           }}
         >
           <RotateCcw className="w-4 h-4" />
@@ -107,8 +110,8 @@ export default function ManagerEditorPage() {
           onSelect={setSelectedId}
           onChangeLayout={(next) => {
             setLayout(next);
-            if (managerId && draftPayload) {
-              saveManagerDraft(supabase, managerId, {
+            if (designerId && draftPayload) {
+              saveManagerDraft(supabase, designerId, {
                 ...draftPayload,
                 editorCopy: copy,
                 editorLayout: next,
@@ -134,8 +137,8 @@ export default function ManagerEditorPage() {
                     onChange={(e) => {
                       const nextCopy = { ...copy, [selectedKey]: e.target.value };
                       setCopy(nextCopy);
-                      if (managerId && draftPayload) {
-                        saveManagerDraft(supabase, managerId, {
+                      if (designerId && draftPayload) {
+                        saveManagerDraft(supabase, designerId, {
                           ...draftPayload,
                           editorCopy: nextCopy,
                           editorLayout: layout,
@@ -212,7 +215,7 @@ export default function ManagerEditorPage() {
           </Card>
         </div>
       </div>
+      </div>
     </div>
   );
 }
-
