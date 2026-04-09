@@ -40,7 +40,7 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
 
 - **`POST /api/generate`**
   - Requires a **signed-in Supabase user** (401 if anonymous)
-  - **Rate limits** per user via **Upstash Redis** in production (hourly + daily caps; 503 if Redis env is missing in production)
+  - **Rate limits** per user via **Supabase Postgres** (`consume_generation_rate_limit` RPC; fixed hour/day buckets). **503** if the migration is not applied (see [`docs/GENERATION_RATE_LIMIT_SETUP.md`](docs/GENERATION_RATE_LIMIT_SETUP.md))
   - Validates request body with Zod
   - Generates prompt/copy with Anthropic when configured (fallback prompt builder otherwise)
   - Generates the poster image via Replicate **`google/nano-banana-pro`** (`prompt`, `image_input`, `aspect_ratio` from format, **`2K`** resolution, PNG output, `safety_filter_level: block_only_high`, optional fallback model if Replicate routes at capacity)
@@ -69,7 +69,7 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
 - **Email/password sign-in lockout (brute-force slowdown)**  
   - **Flow**: The auth UI does **not** call `signInWithPassword` on the browser for email/password. It **`POST`s to [`/api/auth/password-signin`](src/app/api/auth/password-signin/route.ts)** so the server validates credentials, applies lockout logic, and **sets Supabase session cookies** on success.  
   - **Rules** (see [`src/lib/auth/loginLockout.ts`](src/lib/auth/loginLockout.ts)): Failed attempts are counted per **normalized email** (trim + lowercase). Redis keys use **SHA-256 of that email**, not the raw address in the key. After **5** failed attempts within a **15-minute** rolling window, the account identifier is **locked for 10 minutes**. While locked, the API returns **429** with a **`Retry-After`** header (seconds). A **successful** sign-in **clears** both the failure counter and any lock.  
-  - **Infrastructure**: Uses the same **`UPSTASH_REDIS_REST_URL`** and **`UPSTASH_REDIS_REST_TOKEN`** as AI rate limiting. If those are missing, **lockout is disabled** (local dev without Redis still works; production should set Upstash for both features).  
+  - **Infrastructure**: Optional **`UPSTASH_REDIS_REST_URL`** and **`UPSTASH_REDIS_REST_TOKEN`**. If those are missing, **lockout is disabled** (email/password still works; production may still want Upstash for lockout).  
   - **OAuth**: **Google sign-in is unchanged** and does not go through this route or counter.  
   - **Limitation**: The public Supabase **anon** key can still be used to call Supabase Auth APIs directly outside this app; this lockout protects users going through **your** sign-in path and aligns sessions with the server route. Stronger guarantees require provider/network-level controls.
 
@@ -85,9 +85,9 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
 
 - **AI generation endpoint (`POST /api/generate`)**  
   - **401** for anonymous callers—Replicate and Anthropic are not invoked without a valid Supabase session.  
-  - **Per-user rate limits** in production using **Upstash Redis** (sliding windows: hourly and daily caps; tune with `GENERATE_RL_PER_HOUR` and `GENERATE_RL_PER_DAY`). **429** when limits are exceeded (`Retry-After` set when available).  
-  - **Fail closed in production** if Upstash env vars are missing (**503**) so the endpoint cannot run uncapped paid jobs.  
-  - In local/non-production dev, rate limiting is **skipped** when Upstash is not configured.  
+  - **Per-user rate limits** via **Supabase** table `generation_rate_buckets` and RPC **`consume_generation_rate_limit`** (hourly + daily caps; tune with `GENERATE_RL_PER_HOUR` and `GENERATE_RL_PER_DAY`). **429** when limits are exceeded (`Retry-After` set when available).  
+  - **503** if the RPC/table is missing (run [`supabase-migration-generation-rate-limit.sql`](supabase-migration-generation-rate-limit.sql) or full [`supabase-schema.sql`](supabase-schema.sql)).  
+  - **`SKIP_GENERATE_RATE_LIMIT=1`** bypasses limits for trusted local testing only (never on public deployments).  
   - **Reference image URLs** in the JSON body must point at this project’s Supabase public **`generation-references`** objects only—reduces open-proxy and SSRF risk.  
   - Request bodies are validated with **Zod** before any external AI calls.
 
@@ -103,7 +103,7 @@ For more detail, see [`ARCHITECTURE.md`](ARCHITECTURE.md) (API table and securit
 - **Data/Auth**: Supabase (`@supabase/supabase-js`, `@supabase/ssr`)
 - **Validation**: Zod
 - **State**: Zustand
-- **Rate limiting (production AI)**: Upstash Redis (`@upstash/redis`, `@upstash/ratelimit`)
+- **Rate limiting**: `/api/generate` uses **Supabase Postgres**; optional **Upstash Redis** for email login lockout (`@upstash/redis`, `@upstash/ratelimit`)
 - **AI/Integrations**: Replicate (**Nano Banana Pro** / `google/nano-banana-pro`), Anthropic; Meta Graph API code paths exist for Instagram but are **not functional** yet
 - **Testing**: Vitest
 
@@ -130,10 +130,12 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 # Required for image generation API
 REPLICATE_API_TOKEN=your-replicate-token
 
-# Required in production for /api/generate rate limits (Upstash Redis REST)
-# Local dev works without these (limits skipped). Create a Redis database at https://upstash.com
-UPSTASH_REDIS_REST_URL=https://your-redis.upstash.io
-UPSTASH_REDIS_REST_TOKEN=your-upstash-token
+# Optional — email/password login lockout only (not used for /api/generate).
+# UPSTASH_REDIS_REST_URL=https://your-redis.upstash.io
+# UPSTASH_REDIS_REST_TOKEN=your-upstash-token
+
+# Optional: trusted local tests only — bypasses Supabase generate rate limits
+# SKIP_GENERATE_RATE_LIMIT=1
 
 # Optional caps (defaults: 15/hour, 50/day per authenticated user)
 # GENERATE_RL_PER_HOUR=15
@@ -186,7 +188,7 @@ The production build runs on [Vercel](https://vercel.com) as a standard **Next.j
 2. **Framework**: Vercel should detect Next.js automatically. Both **`npm run dev`** and **`npm run build`** use **`--webpack`** (see `package.json`) so dependencies like `@supabase/ssr` resolve cleanly; production runs the same webpack-based Next build on Vercel’s Node runtime.
 
 3. **Environment variables**: Add the same keys you use locally in **Project → Settings → Environment Variables** (Production / Preview as needed):  
-   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `REPLICATE_API_TOKEN`, **`UPSTASH_REDIS_REST_URL`**, **`UPSTASH_REDIS_REST_TOKEN`** (required for production generate rate limits—without them, `/api/generate` returns 503), **`TEAM_INVITE_SECRET`** (required for **Copy athlete invite link** in production—without a valid 16+ char secret, `/api/team-invite` returns 503), and optionally `ANTHROPIC_API_KEY`, `GENERATE_RL_PER_HOUR`, `GENERATE_RL_PER_DAY`.  
+   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `REPLICATE_API_TOKEN`, **`TEAM_INVITE_SECRET`** (required for **Copy athlete invite link** in production—without a valid 16+ char secret, `/api/team-invite` returns 503), and optionally `ANTHROPIC_API_KEY`, `GENERATE_RL_PER_HOUR`, `GENERATE_RL_PER_DAY`, **`UPSTASH_REDIS_REST_URL`** / **`UPSTASH_REDIS_REST_TOKEN`** (login lockout only), `SKIP_GENERATE_RATE_LIMIT` (never on production). Ensure Supabase has the **generation rate limit** migration applied so `/api/generate` does not return 503.  
    Do **not** assume Instagram env vars are required until Meta integration is complete.
 
 4. **Supabase auth URLs**: In the Supabase dashboard, add **Site URL** `https://sideline-main.vercel.app` (or your custom domain) under **Authentication → URL configuration**, and put `https://sideline-main.vercel.app/auth/callback` in the redirect allow list along with `http://localhost:3000/auth/callback` for local dev and any preview URLs you use.

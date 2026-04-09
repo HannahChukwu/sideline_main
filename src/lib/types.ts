@@ -212,7 +212,12 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      consume_generation_rate_limit: {
+        Args: { p_per_hour?: number; p_per_day?: number };
+        Returns: unknown;
+      };
+    };
     Enums: {
       role: Role;
     };

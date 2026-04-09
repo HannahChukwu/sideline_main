@@ -1,10 +1,10 @@
-import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/types";
 
 export type ConsumeGenerateRateResult =
   | { ok: true }
   | { ok: false; kind: "rate_limited"; retryAfterSec: number }
-  | { ok: false; kind: "misconfigured" };
+  | { ok: false; kind: "misconfigured"; detail?: string };
 
 /** @internal */
 export function clampLimitEnv(value: string | undefined, fallback: number): number {
@@ -13,80 +13,72 @@ export function clampLimitEnv(value: string | undefined, fallback: number): numb
   return Math.min(n, 10_000);
 }
 
-function secondsUntilReset(resetMs: number): number {
-  return Math.max(1, Math.ceil((resetMs - Date.now()) / 1000));
-}
+type RpcPayload = {
+  ok?: boolean;
+  reason?: string;
+  retry_after_sec?: number;
+};
 
-let redisClient: Redis | null | undefined;
-let limiterPair: { hourly: Ratelimit; daily: Ratelimit } | undefined;
-
-function getRedis(): Redis | null {
-  if (redisClient !== undefined) return redisClient;
-  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
-  if (!url || !token) {
-    redisClient = null;
-    return null;
-  }
-  redisClient = new Redis({ url, token });
-  return redisClient;
-}
-
-function getLimiters(redis: Redis): { hourly: Ratelimit; daily: Ratelimit } {
-  if (limiterPair) return limiterPair;
-  const perHour = clampLimitEnv(process.env.GENERATE_RL_PER_HOUR, 15);
-  const perDay = clampLimitEnv(process.env.GENERATE_RL_PER_DAY, 50);
-  limiterPair = {
-    hourly: new Ratelimit({
-      redis,
-      limiter: Ratelimit.slidingWindow(perHour, "1 h"),
-      prefix: "ratelimit:generate:hour",
-    }),
-    daily: new Ratelimit({
-      redis,
-      limiter: Ratelimit.slidingWindow(perDay, "24 h"),
-      prefix: "ratelimit:generate:day",
-    }),
+function parseRpcPayload(data: unknown): RpcPayload | null {
+  if (!data || typeof data !== "object") return null;
+  const o = data as Record<string, unknown>;
+  return {
+    ok: typeof o.ok === "boolean" ? o.ok : undefined,
+    reason: typeof o.reason === "string" ? o.reason : undefined,
+    retry_after_sec: typeof o.retry_after_sec === "number" ? o.retry_after_sec : undefined,
   };
-  return limiterPair;
-}
-
-/** Only for tests — resets cached Redis client and limiters. */
-export function __resetGenerateRateLimitForTests(): void {
-  redisClient = undefined;
-  limiterPair = undefined;
 }
 
 /**
- * Consumes one generation slot against per-user hourly and daily Upstash limits.
- * Production without Upstash env → misconfigured (fail closed).
- * Non-production without Upstash → allow (local dev without Redis).
+ * Consumes one generation slot using Supabase Postgres (`consume_generation_rate_limit` RPC).
+ * Fixed calendar buckets: `date_trunc('hour'|'day', now())` in the database (Supabase defaults to UTC).
+ *
+ * `SKIP_GENERATE_RATE_LIMIT=1` or `true` bypasses limits (trusted local tests only).
  */
-export async function consumeGenerateRateLimit(userId: string): Promise<ConsumeGenerateRateResult> {
-  const redis = getRedis();
-  if (!redis) {
-    if (process.env.NODE_ENV === "production") {
-      return { ok: false, kind: "misconfigured" };
-    }
+export async function consumeGenerateRateLimit(
+  supabase: SupabaseClient<Database>
+): Promise<ConsumeGenerateRateResult> {
+  const skip =
+    process.env.SKIP_GENERATE_RATE_LIMIT === "1" ||
+    process.env.SKIP_GENERATE_RATE_LIMIT === "true";
+  if (skip) {
     return { ok: true };
   }
 
-  const { hourly, daily } = getLimiters(redis);
-  const hourResult = await hourly.limit(userId);
-  if (!hourResult.success) {
+  const perHour = clampLimitEnv(process.env.GENERATE_RL_PER_HOUR, 15);
+  const perDay = clampLimitEnv(process.env.GENERATE_RL_PER_DAY, 50);
+
+  const { data, error } = await supabase.rpc("consume_generation_rate_limit", {
+    p_per_hour: perHour,
+    p_per_day: perDay,
+  });
+
+  if (error) {
+    const msg = error.message ?? String(error);
     return {
       ok: false,
-      kind: "rate_limited",
-      retryAfterSec: secondsUntilReset(hourResult.reset),
+      kind: "misconfigured",
+      detail: msg,
     };
   }
-  const dayResult = await daily.limit(userId);
-  if (!dayResult.success) {
+
+  const payload = parseRpcPayload(data);
+  if (!payload || typeof payload.ok !== "boolean") {
     return {
       ok: false,
-      kind: "rate_limited",
-      retryAfterSec: secondsUntilReset(dayResult.reset),
+      kind: "misconfigured",
+      detail: "Unexpected response from consume_generation_rate_limit",
     };
   }
-  return { ok: true };
+
+  if (payload.ok) {
+    return { ok: true };
+  }
+
+  if (payload.reason === "not_authenticated") {
+    return { ok: false, kind: "misconfigured", detail: "Rate limit RPC lost session context" };
+  }
+
+  const retry = Math.max(1, Math.min(payload.retry_after_sec ?? 60, 86400));
+  return { ok: false, kind: "rate_limited", retryAfterSec: retry };
 }
