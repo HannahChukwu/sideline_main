@@ -12,7 +12,7 @@
 
 5. Click **Run** (or press Cmd/Ctrl+Enter).
 
-6. Confirm it succeeds (no red errors). You should see “Success. No rows returned.” Tables created: `profiles`, `schools`, `teams`, `athletes`, `schedules`, `logos`, `manager_drafts`, `draft_reference_images`, plus RLS policies. The schema also defines Storage bucket **`generation-references`** (public read, authenticated upload to `/{user_id}/…`) for designer reference images used with AI generation. If you added the bucket SQL in a later edit, re-run the full `supabase-schema.sql` or the storage block at the end of that file so uploads from `/designer/create` succeed.
+6. Confirm it succeeds (no red errors). You should see “Success. No rows returned.” Tables created: `profiles`, `schools`, `teams`, `athletes`, `schedules`, `logos`, `manager_drafts`, `draft_reference_images`, **`generation_rate_buckets`** (for `/api/generate` rate limits), plus RLS policies and RPC **`consume_generation_rate_limit`**. The schema also defines Storage bucket **`generation-references`** (public read, authenticated upload to `/{user_id}/…`) for designer reference images used with AI generation. If you added the bucket SQL in a later edit, re-run the full `supabase-schema.sql` or the storage block at the end of that file so uploads from `/designer/create` succeed.
 
 ---
 
@@ -71,3 +71,7 @@ Your `schedules` table may predate an `updated_at` column. The app **does not se
 ### “Infinite recursion detected in policy for relation schools”
 
 That happens when policies on `schools` and `teams` reference each other through subqueries under RLS. Run **`supabase-fix-rls-recursion.sql`** once in the SQL Editor (it adds `school_managed_by_user` / `team_managed_by_user` and updates the **teams**, **athletes**, **schedules**, and **logos** manager policies). Fresh installs already include this in `supabase-schema.sql` section 5.
+
+### `/api/generate` returns 503 about rate limiting / migration
+
+The app uses Postgres for generate caps. If you created the project before that was added to `supabase-schema.sql`, run **`supabase-migration-generation-rate-limit.sql`** once in the SQL Editor. Step-by-step: [`GENERATION_RATE_LIMIT_SETUP.md`](GENERATION_RATE_LIMIT_SETUP.md).

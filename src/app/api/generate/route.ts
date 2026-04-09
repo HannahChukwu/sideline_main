@@ -415,13 +415,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const rl = await consumeGenerateRateLimit(user.id);
+  const rl = await consumeGenerateRateLimit(supabase);
   if (!rl.ok) {
     if (rl.kind === "misconfigured") {
       return NextResponse.json(
         {
           error:
-            "Generation service is misconfigured (rate limiting). Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.",
+            "Generation rate limiting is not available. Apply the Postgres migration: run `supabase-migration-generation-rate-limit.sql` in the Supabase SQL Editor (or use a fresh `supabase-schema.sql`). Optional: set SKIP_GENERATE_RATE_LIMIT=1 only for trusted local tests.",
+          detail: rl.detail,
         },
         { status: 503 }
       );

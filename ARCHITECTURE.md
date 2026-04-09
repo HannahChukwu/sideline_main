@@ -163,7 +163,7 @@ Reference uploads for generation use a dedicated bucket (see `GENERATION_REFEREN
 
 | Route | Role |
 |-------|------|
-| **`POST /api/generate`** | Requires **Supabase auth**; **Upstash-backed** per-user hourly/daily rate limits in production; validates body with Zod; builds prompts; calls **Replicate** (and related helpers); returns generated image URL. Sanitizes `referenceImageUrls` to Supabase public object URLs only. |
+| **`POST /api/generate`** | Requires **Supabase auth**; **Postgres-backed** per-user hourly/daily rate limits (`consume_generation_rate_limit` RPC); validates body with Zod; builds prompts; calls **Replicate** (and related helpers); returns generated image URL. Sanitizes `referenceImageUrls` to Supabase public object URLs only. |
 | **`POST /api/auth/password-signin`** | Validates email/password; **Upstash** lockout after repeated failures; returns session cookies on success. |
 | **`GET /api/live-scores`** | Fetches and normalizes **NCAA** scoreboard JSON for live/final game display. |
 | **`POST /api/team-invite`** | Session user must be **`schools.manager_id`** for the given **`team_id`**; returns absolute **`/athlete/join?t=…`** URL; signs with **`TEAM_INVITE_SECRET`** (server-only). |
@@ -190,7 +190,7 @@ Other pages call Supabase **directly from the browser or server** for CRUD on pr
 - **RLS** is the primary enforcement mechanism for multi-tenant data (school owners vs each other; users vs profiles).
 - **Anon key** is used in browser and server clients; no service-role client appears required for normal user flows in the documented schema.
 - **Instagram tokens** are stored encrypted; decryption happens only on the server for publish.
-- **Generate route** requires a signed-in user, enforces reference images to known Supabase paths (SSRF/open proxy), and rate-limits generations per user in production (Upstash).
+- **Generate route** requires a signed-in user, enforces reference images to known Supabase paths (SSRF/open proxy), and rate-limits generations per user via Supabase Postgres (`generation_rate_buckets` + RPC).
 - **Password sign-in** uses `POST /api/auth/password-signin` plus Upstash-backed lockout (5 failures → 10-minute cooldown per email).
 - **Team invites**: minting is **school-owner–only** (verified via Supabase read on `teams` + embedded `schools.manager_id`). Tokens are **HMAC-signed**; **redeem** checks role (**athlete** / **student** only). **`TEAM_INVITE_SECRET`** must be long and server-only; missing/weak secret disables minting in production (**503**).
 - **OAuth and email flows**: redirect targets from **`next`** are restricted to same-origin relative paths to reduce open-redirect risk.
