@@ -2,9 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decryptString } from "@/lib/instagram/tokenCrypto";
 
+type MediaType = "FEED" | "STORIES";
+
 type PublishBody = {
+  teamId: string;
   imageUrl: string;
-  caption: string;
+  caption?: string;
+  mediaType?: MediaType;
 };
 
 export async function POST(request: NextRequest) {
@@ -18,28 +22,39 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
   const body = (await request.json()) as Partial<PublishBody>;
+  const teamId = body.teamId;
   const imageUrl = body.imageUrl;
-  const caption = body.caption;
+  const mediaType: MediaType = body.mediaType === "STORIES" ? "STORIES" : "FEED";
+  const caption = typeof body.caption === "string" ? body.caption : "";
 
+  if (!teamId || typeof teamId !== "string") {
+    return NextResponse.json({ error: "Missing teamId" }, { status: 400 });
+  }
   if (!imageUrl || typeof imageUrl !== "string") {
     return NextResponse.json({ error: "Missing imageUrl" }, { status: 400 });
   }
-  if (!caption || typeof caption !== "string") {
-    return NextResponse.json({ error: "Missing caption" }, { status: 400 });
+  if (!imageUrl.startsWith("https://")) {
+    return NextResponse.json(
+      { error: "imageUrl must be a public https URL (Instagram cannot fetch blob: or http: URLs)." },
+      { status: 400 }
+    );
   }
-  if (caption.length > 2200) {
-    return NextResponse.json({ error: "Caption must be <= 2200 characters" }, { status: 400 });
+
+  if (mediaType === "FEED") {
+    if (caption.length > 2200) {
+      return NextResponse.json({ error: "Caption must be <= 2200 characters" }, { status: 400 });
+    }
   }
 
   const { data: account, error: accountErr } = await supabase
-    .from("instagram_accounts")
+    .from("team_instagram_accounts")
     .select("ig_user_id, access_token_encrypted")
-    .eq("user_id", user.id)
+    .eq("team_id", teamId)
     .maybeSingle();
 
   if (accountErr || !account) {
     return NextResponse.json(
-      { error: "Instagram account not connected" },
+      { error: "Instagram not connected for this team. Connect it from the designer flow." },
       { status: 400 }
     );
   }
@@ -47,17 +62,22 @@ export async function POST(request: NextRequest) {
   const igUserId = account.ig_user_id;
   const accessToken = decryptString(account.access_token_encrypted);
 
-  // 1) Create container
   const mediaUrl = `https://graph.facebook.com/v19.0/${igUserId}/media`;
+  const mediaParams = new URLSearchParams({
+    image_url: imageUrl,
+    access_token: accessToken,
+  });
+
+  if (mediaType === "STORIES") {
+    mediaParams.set("media_type", "STORIES");
+  } else {
+    mediaParams.set("caption", caption);
+  }
+
   const mediaRes = await fetch(mediaUrl, {
     method: "POST",
-    // Meta accepts either application/x-www-form-urlencoded or query string.
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      image_url: imageUrl,
-      caption,
-      access_token: accessToken,
-    }),
+    body: mediaParams,
   });
 
   if (!mediaRes.ok) {
@@ -74,7 +94,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Media container creation returned no id" }, { status: 500 });
   }
 
-  // 2) Publish container
   const publishUrl = `https://graph.facebook.com/v19.0/${igUserId}/media_publish`;
   const publishRes = await fetch(publishUrl, {
     method: "POST",
@@ -96,8 +115,8 @@ export async function POST(request: NextRequest) {
   const publishJson = (await publishRes.json()) as { id?: string };
   return NextResponse.json({
     ok: true,
+    media_type: mediaType,
     creation_id: creationId,
     publish_id: publishJson.id ?? null,
   });
 }
-

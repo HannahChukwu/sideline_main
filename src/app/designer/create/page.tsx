@@ -38,6 +38,15 @@ import { getAthletesForTeam } from "@/lib/supabase/athletes";
 import { getSchedulesForTeam, type ScheduleRow } from "@/lib/supabase/schedules";
 import type { Athlete, Team } from "@/lib/pipeline/types";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import type { TeamInstagramRow } from "@/lib/instagram/teamInstagram";
 import { applyScheduleRowToPosterForm, formatScheduleRowOptionLabel } from "@/lib/schedule/applyScheduleToForm";
 import {
   REPLICATE_IMAGE_MODEL_ID,
@@ -129,6 +138,14 @@ const FORMAT_ASPECT: Record<string, string> = {
   banner: "aspect-video",
 };
 
+function InstagramGlyph({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+    </svg>
+  );
+}
+
 export default function CreateAsset() {
   const router = useRouter();
   const [form, setForm] = useState<FormState>({
@@ -198,9 +215,11 @@ export default function CreateAsset() {
   const [ctxRoster, setCtxRoster] = useState<Athlete[]>([]);
   const [ctxMatchRows, setCtxMatchRows] = useState<ScheduleRow[]>([]);
   const [ctxMatchErr, setCtxMatchErr] = useState<string | null>(null);
-  // Instagram integration state
-  const [igConnected, setIgConnected] = useState<boolean | null>(null);
-  const [igUserId, setIgUserId] = useState<string | null>(null);
+  // Instagram (per athletics team)
+  const [teamIgRows, setTeamIgRows] = useState<TeamInstagramRow[]>([]);
+  const [igDialogOpen, setIgDialogOpen] = useState(false);
+  const [igTeamForPublish, setIgTeamForPublish] = useState<string | null>(null);
+  const [igPublishing, setIgPublishing] = useState(false);
   const [igCaption, setIgCaption] = useState("");
   const [igPostError, setIgPostError] = useState<string | null>(null);
   const [igPostSuccess, setIgPostSuccess] = useState<string | null>(null);
@@ -355,37 +374,33 @@ export default function CreateAsset() {
 
   useEffect(() => {
     let cancelled = false;
-
-    async function loadInstagramStatus() {
-      try {
-        const { data: userRes, error: userErr } = await supabase.auth.getUser();
-        if (userErr) throw userErr;
-        const user = userRes.user;
-
-        if (!user) {
-          if (!cancelled) setIgConnected(false);
-          return;
-        }
-
-        const res = await fetch("/api/instagram/status", { credentials: "include" });
-        const json = await res.json().catch(() => ({}));
-        if (cancelled) return;
-
-        setIgConnected(Boolean(json.connected));
-        setIgUserId(json.ig_user_id ?? null);
-      } catch {
-        if (!cancelled) setIgConnected(false);
-      }
+    if (!signedIn) {
+      setTeamIgRows([]);
+      return;
     }
-
-    // Avoid flashing the connect UI while we don't yet know.
-    setIgConnected(null);
-    loadInstagramStatus();
-
+    fetch("/api/instagram/teams", { credentials: "include" })
+      .then((r) => r.json())
+      .then((j: { teams?: TeamInstagramRow[] }) => {
+        if (!cancelled) setTeamIgRows(Array.isArray(j.teams) ? j.teams : []);
+      })
+      .catch(() => {
+        if (!cancelled) setTeamIgRows([]);
+      });
     return () => {
       cancelled = true;
     };
-  }, [supabase]);
+  }, [signedIn]);
+
+  useEffect(() => {
+    if (!igDialogOpen) return;
+    setIgPostError(null);
+    setIgPostSuccess(null);
+    if (genTeamId && teamIgRows.some((t) => t.id === genTeamId)) {
+      setIgTeamForPublish(genTeamId);
+    } else if (teamIgRows.length > 0) {
+      setIgTeamForPublish((prev) => prev ?? teamIgRows[0]!.id);
+    }
+  }, [igDialogOpen, genTeamId, teamIgRows]);
 
   useEffect(() => {
     if (step !== "result") return;
@@ -619,6 +634,78 @@ export default function CreateAsset() {
       designerName: designerName.trim() || currentDesigner || "Designer",
     });
     setSaveState(status === "published" ? "published" : "draft");
+  }
+
+  const instagramMediaType = useMemo(() => (form.format === "story" ? "STORIES" : "FEED"), [form.format]);
+
+  async function publishToTeamInstagram() {
+    if (!generatedImage) return;
+    if (!igTeamForPublish) {
+      setIgPostError("Select a team.");
+      return;
+    }
+    const row = teamIgRows.find((t) => t.id === igTeamForPublish);
+    if (!row?.igConnected) {
+      setIgPostError("Connect Instagram for this team using the link below.");
+      return;
+    }
+    if (instagramMediaType === "FEED" && !igCaption.trim()) {
+      setIgPostError("Add a caption for a feed post. Put hashtags in the caption (e.g. #GameDay).");
+      return;
+    }
+
+    setIgPublishing(true);
+    setIgPostError(null);
+    setIgPostSuccess(null);
+
+    try {
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userData.user) {
+        setIgPostError("Sign in to publish to Instagram.");
+        return;
+      }
+
+      let imageUrl = generatedImage;
+      try {
+        imageUrl = await uploadGeneratedPosterFromUrl(supabase, userData.user.id, generatedImage);
+        setGeneratedImage(imageUrl);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Could not prepare image for Instagram.";
+        setIgPostError(msg);
+        return;
+      }
+
+      if (!imageUrl.startsWith("https://")) {
+        setIgPostError("A public https image URL is required for Instagram.");
+        return;
+      }
+
+      const res = await fetch("/api/instagram/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          teamId: igTeamForPublish,
+          imageUrl,
+          mediaType: instagramMediaType,
+          caption: instagramMediaType === "FEED" ? igCaption.trim() : "",
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setIgPostError(typeof data.error === "string" ? data.error : "Publish failed.");
+        return;
+      }
+      setIgPostSuccess(
+        instagramMediaType === "STORIES"
+          ? "Published to the team’s Instagram story."
+          : "Published to the team’s Instagram feed."
+      );
+    } catch {
+      setIgPostError("Network error while publishing.");
+    } finally {
+      setIgPublishing(false);
+    }
   }
 
   /* ─── Shared picker style helpers ──────────────────────────────────── */
@@ -1396,6 +1483,24 @@ export default function CreateAsset() {
                 )}
               </div>
 
+              {step === "result" && generatedImage && signedIn && (
+                <div className="flex justify-center py-3 border-b border-border/50 bg-muted/15">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIgPostError(null);
+                      setIgPostSuccess(null);
+                      setIgDialogOpen(true);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 border border-pink-500/25 bg-gradient-to-r from-purple-600/15 to-pink-600/15 text-pink-100 hover:from-purple-600/25 hover:to-pink-600/25 transition-colors"
+                    title="Share to team Instagram"
+                  >
+                    <InstagramGlyph className="w-5 h-5" />
+                    <span className="text-xs font-bold tracking-wide">Instagram</span>
+                  </button>
+                </div>
+              )}
+
               {/* Result metadata + actions */}
               {step === "result" && (
                 <div className="p-4 border-t border-border/50">
@@ -1571,24 +1676,128 @@ export default function CreateAsset() {
                       <Send className="w-3.5 h-3.5" />
                     </button>
                   </div>
-
-                  {igPostError && (
-                    <div className="mt-3 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">
-                      {igPostError}
-                    </div>
-                  )}
-
-                  {igPostSuccess && (
-                    <div className="mt-3 text-xs text-green-400 bg-green-400/10 border border-green-400/20 rounded-lg px-3 py-2">
-                      {igPostSuccess}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           </div>
         </div>
       </main>
+
+      <Dialog open={igDialogOpen} onOpenChange={setIgDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Post to team Instagram</DialogTitle>
+            <DialogDescription>
+              Pick the athletics program account. Where it publishes follows your{" "}
+              <span className="text-foreground font-medium">output format</span>: Story → Instagram story; Post or
+              Banner → feed post.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground">This image will publish as: </span>
+              {instagramMediaType === "STORIES"
+                ? "Instagram Story (image only — API does not add a text caption to stories)."
+                : "Instagram feed post (caption + hashtags below)."}
+            </div>
+
+            {teamIgRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No teams found. Add a school and team first, then return here to connect each team&apos;s Instagram
+                Business account.
+                <Link href="/designer/team" className="block mt-2 text-primary font-medium hover:underline">
+                  Open team setup →
+                </Link>
+              </p>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <label htmlFor="ig-team-select" className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                    Team
+                  </label>
+                  <select
+                    id="ig-team-select"
+                    value={igTeamForPublish ?? ""}
+                    onChange={(e) => setIgTeamForPublish(e.target.value || null)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/40"
+                  >
+                    {teamIgRows.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                        {t.igConnected ? "" : " — connect Instagram"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {igTeamForPublish &&
+                  !teamIgRows.find((t) => t.id === igTeamForPublish)?.igConnected && (
+                    <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-amber-200/90">
+                      <p className="mb-2">This team is not linked to Instagram yet. Connect once with Facebook (Page + IG Business).</p>
+                      <a
+                        href={`/api/instagram/connect?teamId=${encodeURIComponent(igTeamForPublish)}&next=${encodeURIComponent("/designer/create")}`}
+                        className="inline-flex font-semibold text-primary hover:underline"
+                      >
+                        Connect Instagram for this team →
+                      </a>
+                    </div>
+                  )}
+
+                {instagramMediaType === "FEED" && (
+                  <div className="space-y-1.5">
+                    <label htmlFor="ig-caption" className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                      Caption & hashtags
+                    </label>
+                    <textarea
+                      id="ig-caption"
+                      value={igCaption}
+                      onChange={(e) => setIgCaption(e.target.value)}
+                      rows={6}
+                      maxLength={2200}
+                      placeholder="Write the post copy and include hashtags (e.g. #GameDay #YourSchool)…"
+                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/40 resize-none"
+                    />
+                    <p className="text-[10px] text-muted-foreground">{igCaption.length} / 2200</p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {igPostError && (
+              <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">
+                {igPostError}
+              </div>
+            )}
+            {igPostSuccess && (
+              <div className="text-xs text-green-400 bg-green-400/10 border border-green-400/20 rounded-lg px-3 py-2">
+                {igPostSuccess}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setIgDialogOpen(false)}>
+              Close
+            </Button>
+            <Button
+              type="button"
+              disabled={igPublishing || teamIgRows.length === 0}
+              onClick={() => void publishToTeamInstagram()}
+              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-600/90 hover:to-pink-600/90 text-white border-0"
+            >
+              {igPublishing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2 inline" />
+                  Publishing…
+                </>
+              ) : (
+                "Publish"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

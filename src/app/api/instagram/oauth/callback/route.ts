@@ -120,17 +120,26 @@ export async function GET(request: NextRequest) {
   const cookieState = request.cookies.get("ig_oauth_state")?.value;
   const rawNext = request.cookies.get("ig_oauth_next")?.value ?? "/designer/create";
   const next = rawNext.startsWith("/") ? rawNext : "/designer/create";
+  const teamIdCookie = request.cookies.get("ig_oauth_team_id")?.value ?? null;
+  const teamIdForConnect =
+    teamIdCookie &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(teamIdCookie)
+      ? teamIdCookie
+      : null;
 
   const res = NextResponse.redirect(`${origin}${next}?ig=connected`);
 
   // Validate CSRF state.
   if (!cookieState || cookieState !== state) {
-    return NextResponse.redirect(`${origin}${next}?ig=oauth_state_mismatch`);
+    const bad = NextResponse.redirect(`${origin}${next}?ig=oauth_state_mismatch`);
+    bad.cookies.set("ig_oauth_team_id", "", { path: "/", maxAge: 0 });
+    return bad;
   }
 
   // Clear one-time cookies.
   res.cookies.set("ig_oauth_state", "", { path: "/", maxAge: 0 });
   res.cookies.set("ig_oauth_next", "", { path: "/", maxAge: 0 });
+  res.cookies.set("ig_oauth_team_id", "", { path: "/", maxAge: 0 });
 
   const appId = getEnv("INSTAGRAM_META_APP_ID");
   const appSecret = getEnv("INSTAGRAM_META_APP_SECRET");
@@ -156,23 +165,51 @@ export async function GET(request: NextRequest) {
     const accessTokenEncrypted = encryptString(longLived);
     const now = new Date().toISOString();
 
-    const { error } = await supabase
-      .from("instagram_accounts")
-      .upsert(
+    if (teamIdForConnect) {
+      const { data: teamRow, error: teamErr } = await supabase
+        .from("teams")
+        .select("id")
+        .eq("id", teamIdForConnect)
+        .maybeSingle();
+
+      if (teamErr || !teamRow) {
+        throw new Error("team_not_found_or_unauthorized");
+      }
+
+      const { error } = await supabase.from("team_instagram_accounts").upsert(
         {
-          user_id: user.id,
+          team_id: teamIdForConnect,
           ig_user_id: igUserId,
           access_token_encrypted: accessTokenEncrypted,
           updated_at: now,
         },
-        { onConflict: "user_id" }
+        { onConflict: "team_id" }
       );
 
-    if (error) throw error;
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from("instagram_accounts")
+        .upsert(
+          {
+            user_id: user.id,
+            ig_user_id: igUserId,
+            access_token_encrypted: accessTokenEncrypted,
+            updated_at: now,
+          },
+          { onConflict: "user_id" }
+        );
+
+      if (error) throw error;
+    }
   } catch (e: unknown) {
     // Redirect with a failure reason flag; we don't expose the details publicly.
     const message = e instanceof Error ? e.message : "instagram_connect_failed";
-    return NextResponse.redirect(`${origin}${next}?ig=connect_failed&reason=${encodeURIComponent(message)}`);
+    const fail = NextResponse.redirect(
+      `${origin}${next}?ig=connect_failed&reason=${encodeURIComponent(message)}`
+    );
+    fail.cookies.set("ig_oauth_team_id", "", { path: "/", maxAge: 0 });
+    return fail;
   }
 
   return res;

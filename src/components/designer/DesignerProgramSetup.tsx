@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Calendar, ChevronDown, ChevronRight, Plus, Users } from "lucide-react";
+import { Calendar, ChevronDown, ChevronRight, Link2, Plus, Users } from "lucide-react";
 
 import { ScheduleImporter } from "@/components/schedule/ScheduleImporter";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,15 @@ import { replaceTeamScheduleFromImport, getSchedulesForTeam } from "@/lib/supaba
 import { formatSupabaseError } from "@/lib/supabase/errors";
 import type { Athlete, Team } from "@/lib/pipeline/types";
 import type { ImportedGameEvent } from "@/lib/schedule/parseCsv";
+import type { TeamInstagramRow } from "@/lib/instagram/teamInstagram";
+
+function InstagramGlyph({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+    </svg>
+  );
+}
 
 function defaultSeasonLabel(): string {
   const now = new Date();
@@ -49,6 +58,7 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
   const [playerPos, setPlayerPos] = useState("");
   const [addPlayerBusy, setAddPlayerBusy] = useState(false);
   const [scheduleMsg, setScheduleMsg] = useState<string | null>(null);
+  const [teamIgRows, setTeamIgRows] = useState<TeamInstagramRow[]>([]);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -59,16 +69,24 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
       setSignedIn(Boolean(user));
       if (!user) {
         setTeams([]);
+        setTeamIgRows([]);
         setSchoolExists(false);
         return;
       }
       const school = await getSchoolForDesigner(supabase);
       setSchoolExists(Boolean(school));
       if (school) setOrgName(school.name);
-      const list = await getTeamsForDesigner(supabase);
+      const [list, igRes] = await Promise.all([
+        getTeamsForDesigner(supabase),
+        fetch("/api/instagram/teams", { credentials: "include" })
+          .then((r) => r.json())
+          .catch(() => ({})),
+      ]);
       setTeams(list);
+      setTeamIgRows(Array.isArray(igRes.teams) ? igRes.teams : []);
     } catch {
       setTeams([]);
+      setTeamIgRows([]);
     } finally {
       setBusy(false);
     }
@@ -108,7 +126,7 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
     try {
       const school = await ensureSchoolForDesigner(supabase, orgName.trim() || "My school");
       setSchoolExists(true);
-      await createTeamForDesigner(supabase, {
+      const created = await createTeamForDesigner(supabase, {
         school_id: school.id,
         school_name: school.name,
         team_name: newTeamName.trim(),
@@ -117,6 +135,7 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
       });
       setNewTeamName("");
       await load();
+      setExpandedId(created.id);
       onProgramUpdated();
     } catch (err) {
       setAddTeamErr(formatSupabaseError(err));
@@ -185,7 +204,9 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
         <div>
           <h2 className="text-sm font-semibold text-foreground">Teams, players & schedules</h2>
           <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-            Add each team once, roster players, then upload the season schedule (Excel or CSV). In{" "}
+            Add each team once, connect its{" "}
+            <span className="text-foreground/80 font-medium">Instagram Business</span> account (expand the team), roster
+            players, then upload the season schedule (Excel or CSV). In{" "}
             <span className="text-foreground/80 font-medium">Generator</span>, you&apos;ll pick the team, featured
             athletes, and match from that schedule.
           </p>
@@ -247,6 +268,11 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
           <Plus className="w-3.5 h-3.5" />
           {addTeamBusy ? "Adding…" : "Add team"}
         </Button>
+        <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
+          After the team appears below, expand it and use{" "}
+          <span className="text-foreground/70 font-medium">Connect Instagram</span> to link that program&apos;s IG page
+          (Facebook login with Page + Instagram Business).
+        </p>
       </form>
 
       {teams.length === 0 ? (
@@ -256,6 +282,8 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
           {teams.map((t) => {
             const open = expandedId === t.id;
             const athletes = athletesByTeam[t.id] ?? [];
+            const igRow = teamIgRows.find((r) => r.id === t.id);
+            const igConnected = Boolean(igRow?.igConnected);
             return (
               <li key={t.id} className="rounded-lg border border-border/40 overflow-hidden">
                 <button
@@ -267,12 +295,51 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
                   <span className="font-medium text-foreground">
                     {[t.schoolName, t.teamName].filter(Boolean).join(" · ") || t.teamName}
                   </span>
+                  {igConnected ? (
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-pink-400/90 shrink-0 px-1.5 py-0.5 rounded bg-pink-500/10 border border-pink-500/20">
+                      IG
+                    </span>
+                  ) : null}
                   <span className="text-muted-foreground text-xs ml-auto shrink-0">
                     {t.sport} · {t.season}
                   </span>
                 </button>
                 {open && (
                   <div className="px-3 pb-4 pt-2 border-t border-border/30 space-y-4">
+                    <div className="rounded-lg border border-pink-500/15 bg-gradient-to-r from-purple-500/5 to-pink-500/5 p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <InstagramGlyph className="w-4 h-4 text-pink-300 shrink-0" />
+                        <p className="text-[11px] font-semibold text-foreground uppercase tracking-wider">
+                          Instagram (this team)
+                        </p>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        Link the official Instagram Business account used for this program. You&apos;ll sign in with
+                        Facebook and pick the Page that owns the IG profile. Used when publishing from Generator.
+                      </p>
+                      {igConnected ? (
+                        <div className="space-y-1.5">
+                          <p className="text-xs text-green-400/90 font-medium">
+                            Connected — ready to publish from Generator.
+                          </p>
+                          <a
+                            href={`/api/instagram/connect?teamId=${encodeURIComponent(t.id)}&next=${encodeURIComponent("/designer/team")}`}
+                            className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+                          >
+                            Reconnect or switch Instagram account
+                          </a>
+                        </div>
+                      ) : (
+                        <a
+                          href={`/api/instagram/connect?teamId=${encodeURIComponent(t.id)}&next=${encodeURIComponent("/designer/team")}`}
+                          className="inline-flex items-center gap-2 text-xs font-semibold text-pink-200 hover:text-pink-100 transition-colors"
+                        >
+                          <Link2 className="w-3.5 h-3.5" />
+                          Connect Instagram for this team
+                        </a>
+                      )}
+                    </div>
+
                     <div>
                       <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                         Players
