@@ -456,7 +456,7 @@ values (
   'generation-references',
   'generation-references',
   true,
-  5242880,
+  20971520,
   array['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 )
 on conflict (id) do update set
@@ -507,7 +507,7 @@ values (
   'generated-posters',
   'generated-posters',
   true,
-  5242880,
+  20971520,
   array['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 )
 on conflict (id) do update set

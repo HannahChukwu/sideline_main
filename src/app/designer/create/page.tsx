@@ -467,7 +467,7 @@ export default function CreateAsset() {
         const { data: userData, error: userErr } = await supabase.auth.getUser();
         if (userErr || !userData.user) {
           if (isInitial) {
-            setGenerateError("Sign in to attach reference images (JPEG, PNG, GIF, or WebP, max 5MB each).");
+            setGenerateError("Sign in to attach reference images (JPEG, PNG, GIF, or WebP, max 20MB each).");
             setStep("error");
           }
           setIsRefining(false);
@@ -937,7 +937,7 @@ export default function CreateAsset() {
                     <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
                       Optional. Order matters: <span className="text-foreground/80">1 — Athlete</span>,{" "}
                       <span className="text-foreground/80">2 — Home logo</span>,{" "}
-                      <span className="text-foreground/80">3 — Away logo</span>. JPEG/PNG/GIF/WebP, max 5MB each. Sign in
+                      <span className="text-foreground/80">3 — Away logo</span>. JPEG/PNG/GIF/WebP, max 20MB each. Sign in
                       required. You are responsible for rights and accuracy of logos.
                     </p>
                     {featuredAthleteNames.length > 0 && (

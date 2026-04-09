@@ -72,6 +72,10 @@ Your `schedules` table may predate an `updated_at` column. The app **does not se
 
 That happens when policies on `schools` and `teams` reference each other through subqueries under RLS. Run **`supabase-fix-rls-recursion.sql`** once in the SQL Editor (it adds `school_managed_by_user` / `team_managed_by_user` and updates the **teams**, **athletes**, **schedules**, and **logos** manager policies). Fresh installs already include this in `supabase-schema.sql` section 5.
 
+### Storage upload fails for large AI images (e.g. “exceeds storage limit”)
+
+Reference and generated-poster buckets allow **20MB** per file in current `supabase-schema.sql`. If your project was created with the old **5MB** limit, run **`supabase-migration-storage-image-size-20mb.sql`** once in the SQL Editor.
+
 ### `/api/generate` returns 503 about rate limiting / migration
 
 The app uses Postgres for generate caps. If you created the project before that was added to `supabase-schema.sql`, run **`supabase-migration-generation-rate-limit.sql`** once in the SQL Editor. Step-by-step: [`GENERATION_RATE_LIMIT_SETUP.md`](GENERATION_RATE_LIMIT_SETUP.md).

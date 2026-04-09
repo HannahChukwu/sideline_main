@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   GENERATED_POSTERS_BUCKET,
   GENERATION_REFERENCES_BUCKET,
+  MAX_STORAGE_IMAGE_BYTES,
   uploadGenerationReference,
   uploadGeneratedPosterFromUrl,
 } from "./referenceUpload";
@@ -18,11 +19,11 @@ describe("uploadGenerationReference", () => {
 
   it("rejects oversize files", async () => {
     const supabase = {} as SupabaseClient;
-    const buf = new Uint8Array(5 * 1024 * 1024 + 1);
+    const buf = new Uint8Array(MAX_STORAGE_IMAGE_BYTES + 1);
     const file = new File([buf], "big.jpg", { type: "image/jpeg" });
     await expect(
       uploadGenerationReference(supabase, "user-1", file)
-    ).rejects.toThrow(/5MB/);
+    ).rejects.toThrow(/20MB/);
   });
 
   it.each([

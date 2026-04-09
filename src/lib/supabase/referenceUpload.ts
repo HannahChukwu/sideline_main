@@ -6,7 +6,10 @@ export const GENERATION_REFERENCES_BUCKET = "generation-references";
 /** Archived generated posters only (not reference uploads). */
 export const GENERATED_POSTERS_BUCKET = "generated-posters";
 
-const MAX_BYTES = 5 * 1024 * 1024;
+/** Keep in sync with `file_size_limit` on both image buckets in `supabase-schema.sql`. */
+export const MAX_STORAGE_IMAGE_BYTES = 20 * 1024 * 1024;
+
+const MAX_MB_LABEL = `${MAX_STORAGE_IMAGE_BYTES / 1024 / 1024}MB`;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
 function normalizeImageContentType(blobType: string | undefined): string {
@@ -36,8 +39,8 @@ export async function uploadGenerationReference(
   if (!ALLOWED_TYPES.has(file.type)) {
     throw new Error("Reference image must be JPEG, PNG, GIF, or WebP.");
   }
-  if (file.size > MAX_BYTES) {
-    throw new Error("Reference image must be 5MB or smaller.");
+  if (file.size > MAX_STORAGE_IMAGE_BYTES) {
+    throw new Error(`Reference image must be ${MAX_MB_LABEL} or smaller.`);
   }
   const ext = extForMime(file.type);
   const path = `${userId}/${crypto.randomUUID()}.${ext}`;
@@ -69,8 +72,8 @@ export async function uploadGeneratedPosterFromUrl(
     throw new Error(`Could not download image (${res.status}). Try regenerating and save again.`);
   }
   const blob = await res.blob();
-  if (blob.size > MAX_BYTES) {
-    throw new Error("Generated image exceeds storage limit (5MB).");
+  if (blob.size > MAX_STORAGE_IMAGE_BYTES) {
+    throw new Error(`Generated image exceeds storage limit (${MAX_MB_LABEL}).`);
   }
   const contentType = normalizeImageContentType(blob.type);
   if (!ALLOWED_TYPES.has(contentType)) {
