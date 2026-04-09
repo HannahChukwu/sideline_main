@@ -393,6 +393,81 @@ create policy "Users can upsert own Instagram account"
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
 
+-- ============================================================
+-- 7b. TEAM INSTAGRAM (one IG Business account per athletics team)
+--     OAuth stores tokens here when connecting with ?teamId=…
+-- ============================================================
+create table if not exists public.team_instagram_accounts (
+  team_id                 uuid primary key references public.teams(id) on delete cascade,
+  ig_user_id              text not null,
+  access_token_encrypted  text not null,
+  connected_at            timestamptz not null default now(),
+  updated_at              timestamptz not null default now()
+);
+
+alter table public.team_instagram_accounts enable row level security;
+
+drop policy if exists "Managers can view team Instagram tokens" on public.team_instagram_accounts;
+create policy "Managers can view team Instagram tokens"
+  on public.team_instagram_accounts for select
+  using (
+    exists (
+      select 1
+      from public.teams t
+      inner join public.schools s on s.id = t.school_id
+      where t.id = team_instagram_accounts.team_id
+        and s.manager_id = auth.uid()
+    )
+  );
+
+drop policy if exists "Managers can upsert team Instagram tokens" on public.team_instagram_accounts;
+create policy "Managers can upsert team Instagram tokens"
+  on public.team_instagram_accounts for insert
+  with check (
+    exists (
+      select 1
+      from public.teams t
+      inner join public.schools s on s.id = t.school_id
+      where t.id = team_instagram_accounts.team_id
+        and s.manager_id = auth.uid()
+    )
+  );
+
+drop policy if exists "Managers can update team Instagram tokens" on public.team_instagram_accounts;
+create policy "Managers can update team Instagram tokens"
+  on public.team_instagram_accounts for update
+  using (
+    exists (
+      select 1
+      from public.teams t
+      inner join public.schools s on s.id = t.school_id
+      where t.id = team_instagram_accounts.team_id
+        and s.manager_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.teams t
+      inner join public.schools s on s.id = t.school_id
+      where t.id = team_instagram_accounts.team_id
+        and s.manager_id = auth.uid()
+    )
+  );
+
+drop policy if exists "Managers can delete team Instagram tokens" on public.team_instagram_accounts;
+create policy "Managers can delete team Instagram tokens"
+  on public.team_instagram_accounts for delete
+  using (
+    exists (
+      select 1
+      from public.teams t
+      inner join public.schools s on s.id = t.school_id
+      where t.id = team_instagram_accounts.team_id
+        and s.manager_id = auth.uid()
+    )
+  );
+
 -- Assets policies:
 -- - Everyone authenticated can read published assets.
 -- - Designers can read their own drafts/archived.

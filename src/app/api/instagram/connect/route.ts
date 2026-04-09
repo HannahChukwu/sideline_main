@@ -23,8 +23,14 @@ export async function GET(request: NextRequest) {
   }
 
   const { origin } = new URL(request.url);
-  const rawNext = new URL(request.url).searchParams.get("next") ?? "/designer/create";
+  const urlObj = new URL(request.url);
+  const rawNext = urlObj.searchParams.get("next") ?? "/designer/create";
   const next = rawNext.startsWith("/") ? rawNext : "/designer/create";
+  const teamIdParam = urlObj.searchParams.get("teamId");
+  const teamId =
+    teamIdParam && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(teamIdParam)
+      ? teamIdParam
+      : null;
 
   const state = crypto.randomBytes(16).toString("hex");
   const redirectUri = `${origin}/api/instagram/oauth/callback`;
@@ -59,6 +65,18 @@ export async function GET(request: NextRequest) {
     secure: process.env.NODE_ENV === "production",
     path: "/",
   });
+
+  if (teamId) {
+    res.cookies.set("ig_oauth_team_id", teamId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 600,
+    });
+  } else {
+    res.cookies.set("ig_oauth_team_id", "", { path: "/", maxAge: 0 });
+  }
 
   return res;
 }

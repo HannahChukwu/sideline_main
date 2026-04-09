@@ -111,6 +111,28 @@ export interface Database {
         }>;
         Relationships: [];
       };
+      team_instagram_accounts: {
+        Row: {
+          team_id: string;
+          ig_user_id: string;
+          access_token_encrypted: string;
+          connected_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          team_id: string;
+          ig_user_id: string;
+          access_token_encrypted: string;
+          connected_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<{
+          ig_user_id: string;
+          access_token_encrypted: string;
+          updated_at: string;
+        }>;
+        Relationships: [];
+      };
       schools: {
         Row: { id: string; name: string; manager_id: string; created_at: string; updated_at: string };
         Insert: { id?: string; name: string; manager_id: string; created_at?: string; updated_at?: string };

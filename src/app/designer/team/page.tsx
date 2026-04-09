@@ -120,8 +120,9 @@ export default function DesignerTeamPage() {
             <p className="text-xs text-muted-foreground uppercase tracking-widest mb-2">Designer</p>
             <h1 className="text-3xl font-bold text-foreground">Team</h1>
             <p className="text-sm text-muted-foreground mt-2 max-w-xl">
-              Add teams, rosters, and season schedules. Athletes use invite links to join; the Generator uses this data
-              for match picks.
+              Add teams, connect each team&apos;s Instagram Business account from the expanded row, add rosters and
+              schedules. Athletes use invite links to join; the Generator uses this data for match picks and IG
+              publishing.
             </p>
           </div>
           <Link
