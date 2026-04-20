@@ -33,7 +33,7 @@ function row(partial: Partial<ScheduleRow>): ScheduleRow {
 describe("applyScheduleRowToPosterForm", () => {
   it("fills home as school program and opponent as away", () => {
     const patch = applyScheduleRowToPosterForm(team, row({}));
-    expect(patch.homeTeam).toBe("Ridgeline Lions");
+    expect(patch.homeTeam).toBe("Ridgeline");
     expect(patch.awayTeam).toBe("Tigers");
     expect(patch.sport).toBe("Football");
     expect(patch.eventDate).toBe("2026-03-15");
@@ -45,6 +45,22 @@ describe("applyScheduleRowToPosterForm", () => {
     expect(patch.homeScore).toBe("21");
     expect(patch.awayScore).toBe("14");
   });
+
+  it("normalizes opponent when imported value includes our team", () => {
+    const squashTeam: Team = {
+      id: "t2",
+      schoolName: "Trinity",
+      teamName: "Men's Squash",
+      sport: "Squash",
+      season: "2026",
+    };
+    const patch = applyScheduleRowToPosterForm(
+      squashTeam,
+      row({ opponent: "Men's Squash vs Harvard" })
+    );
+    expect(patch.homeTeam).toBe("Trinity");
+    expect(patch.awayTeam).toBe("Harvard");
+  });
 });
 
 describe("formatScheduleRowOptionLabel", () => {
@@ -52,5 +68,21 @@ describe("formatScheduleRowOptionLabel", () => {
     const label = formatScheduleRowOptionLabel(team, row({}));
     expect(label).toContain("2026-03-15");
     expect(label).toContain("Tigers");
+  });
+
+  it("shows normalized opponent label for imported matchup text", () => {
+    const squashTeam: Team = {
+      id: "t2",
+      schoolName: "Trinity",
+      teamName: "Men's Squash",
+      sport: "Squash",
+      season: "2026",
+    };
+    const label = formatScheduleRowOptionLabel(
+      squashTeam,
+      row({ opponent: "Men's Squash vs Harvard" })
+    );
+    expect(label).toContain("vs Harvard");
+    expect(label).not.toContain("vs Men's Squash vs Harvard");
   });
 });

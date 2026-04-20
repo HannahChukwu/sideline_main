@@ -13,8 +13,59 @@ export type ScheduleFormPatch = {
 };
 
 function ourProgramName(team: Team): string {
-  const parts = [team.schoolName?.trim(), team.teamName?.trim()].filter(Boolean);
-  return parts.join(" ").trim() || team.teamName || "Home";
+  const school = team.schoolName?.trim();
+  if (school) return school;
+  return team.teamName?.trim() || "Home";
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function normalizeOpponent(team: Team, rawOpponent: string): string {
+  const raw = rawOpponent.trim();
+  if (!raw) return "Opponent";
+
+  const oursCandidates = [
+    ourProgramName(team),
+    team.teamName?.trim() ?? "",
+    team.schoolName?.trim() ?? "",
+    team.sport?.trim() ?? "",
+  ].filter(Boolean);
+
+  const oursNormalized = oursCandidates.map((c) => normalizeText(c));
+  const appearsToBeOurs = (value: string) => {
+    const n = normalizeText(value);
+    if (!n) return false;
+    return oursNormalized.some((ours) => ours && (n.includes(ours) || ours.includes(n)));
+  };
+
+  const split = raw
+    .split(/\s+(?:vs\.?|v\.?|@|at)\s+/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  let opponent = raw;
+  if (split.length > 1) {
+    const first = split[0] ?? "";
+    const last = split[split.length - 1] ?? "";
+    if (appearsToBeOurs(first) && !appearsToBeOurs(last)) opponent = last;
+    else if (appearsToBeOurs(last) && !appearsToBeOurs(first)) opponent = first;
+    else opponent = last;
+  }
+
+  opponent = opponent.replace(/^(?:vs\.?|v\.?|@|at)\s+/i, "").trim();
+
+  for (const ours of oursCandidates) {
+    const re = new RegExp(`^${escapeRegex(ours)}\\s+`, "i");
+    opponent = opponent.replace(re, "").trim();
+  }
+
+  return opponent || "Opponent";
 }
 
 function eventDateFromRow(row: ScheduleRow): string {
@@ -49,7 +100,7 @@ function gameTimeFromRow(row: ScheduleRow): string {
  */
 export function applyScheduleRowToPosterForm(team: Team, row: ScheduleRow): ScheduleFormPatch {
   const ours = ourProgramName(team);
-  const opp = row.opponent.trim() || "Opponent";
+  const opp = normalizeOpponent(team, row.opponent);
 
   return {
     homeTeam: ours,
@@ -67,5 +118,6 @@ export function formatScheduleRowOptionLabel(team: Team, row: ScheduleRow): stri
   const when = eventDateFromRow(row) || row.date_text?.trim() || "TBD";
   const time = row.time_text?.trim();
   const at = time ? ` ${time}` : "";
-  return `${when}${at} · vs ${row.opponent.trim() || "TBD"}`;
+  const opp = normalizeOpponent(team, row.opponent);
+  return `${when}${at} · vs ${opp}`;
 }
