@@ -19,6 +19,7 @@ type BuildMasterSportsPromptInput = {
   refinements?: string[];
   styleModifier?: string;
   referenceImageCount?: number;
+  strictPhotoLock?: boolean;
 };
 
 function formatHeadline(type: BuildMasterSportsPromptInput["type"]): string {
@@ -60,17 +61,54 @@ export function buildMasterSportsPrompt(input: BuildMasterSportsPromptInput): st
     ? `Additional creative direction from designer: ${input.customPrompt.trim()}.`
     : "";
 
-  const refs =
-    (input.referenceImageCount ?? 0) > 0
-      ? `Reference images are provided. Image 1 is the athlete and must remain identity-accurate. ` +
-        `Image 2 and image 3 may be logos/marks when available.`
-      : "";
+  const hasReference = (input.referenceImageCount ?? 0) > 0;
+  const hasStyleReference = (input.referenceImageCount ?? 0) >= 1;
+  const hasAthleteReference = (input.referenceImageCount ?? 0) >= 2;
+  const strictPhotoLock = Boolean(input.strictPhotoLock);
+
+  const refs = hasReference
+    ? `Reference image slots are provided in this order: ` +
+      `image 1 = style reference (optional visual direction), ` +
+      `image 2 = athlete source photo (main subject), ` +
+      `image 3 = home logo, image 4 = away logo. ` +
+      `${hasStyleReference ? "Use image 1 for design language only, not identity transfer. " : ""}` +
+      `${hasAthleteReference ? "Use image 2 as the immutable athlete base." : ""}`
+    : "";
 
   const optionalStyleModifier = styleModifier
     ? `Optional style modifier to blend in: ${styleModifier}.`
     : "";
 
+  const isPhotoTruePreset = (input.preset ?? "custom") === "prestige" || (input.preset ?? "custom") === "result";
+
+  const photoLockBlock = hasAthleteReference
+    ? [
+        "CRITICAL PHOTO PRESERVATION RULES:",
+        "- Use image 2 as the primary base photo and preserve exact identity, face shape, skin texture, body proportions, and pose.",
+        "- Do not re-render or re-imagine the athlete. This is a design-over-photo task, not a new character generation task.",
+        "- Keep jersey details, equipment, and court/stadium geometry realistic and consistent with the source image.",
+        "- Apply changes mainly through typography, layout, color grading, lighting accents, and graphic overlays.",
+      ].join("\n")
+    : "";
+
+  const strictPhotoLockBlock = strictPhotoLock
+    ? [
+        "STRICT ATHLETE LOCK (highest priority):",
+        "- Do not change athlete pose, limb position, facial expression, skin tone, hair, body proportions, or clothing fit.",
+        "- Treat the athlete in image 2 as immutable source photography; only perform professional graphic design treatment around/over it.",
+      ].join("\n")
+    : "";
+
+  const realismBiasBlock = isPhotoTruePreset
+    ? [
+        "Realism bias:",
+        "- Prioritize photorealism and editorial sports design quality.",
+        "- Keep effects subtle and intentional; avoid fantasy glow overload, plastic skin, or synthetic anatomy.",
+      ].join("\n")
+    : "";
+
   return [
+    "This is a professional sports design edit request.",
     "Create a high-end collegiate athletic social media graphic using the provided image as the main subject.",
     "Do NOT significantly alter the athlete's body, pose, or identity - keep the photo realistic and sharp.",
     "",
@@ -114,6 +152,9 @@ export function buildMasterSportsPrompt(input: BuildMasterSportsPromptInput): st
     "- No clutter, no over-editing of the player.",
     "",
     optionalStyleModifier,
+    photoLockBlock,
+    strictPhotoLockBlock,
+    realismBiasBlock,
     refs,
     customPrompt,
     refinements,

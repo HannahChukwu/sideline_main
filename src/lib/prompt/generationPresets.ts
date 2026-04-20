@@ -1,4 +1,4 @@
-export type GenerationPreset = "custom" | "hype" | "result" | "commitment";
+export type GenerationPreset = "custom" | "hype" | "result" | "commitment" | "prestige";
 
 export type GenerationPresetConfig = {
   value: GenerationPreset;
@@ -50,6 +50,16 @@ export const GENERATION_PRESETS: GenerationPresetConfig[] = [
     visualStyle: "premium minimal portrait editorial sports design",
     compositionFocus: "face",
     styleModifier: "bold gold/black football hype graphic",
+  },
+  {
+    value: "prestige",
+    label: "Prestige (Photo-True)",
+    description: "Editorial, realistic, designer-made look with minimal athlete alteration.",
+    moodEnergy: "professional, premium, composed confidence",
+    lighting: "clean studio-grade contrast with natural skin and fabric detail",
+    visualStyle: "clean prestige sports branding, editorial finish",
+    compositionFocus: "full body",
+    styleModifier: "clean prestige sports branding",
   },
 ];
 

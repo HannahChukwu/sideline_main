@@ -23,13 +23,14 @@ const RequestSchema = z.object({
   broadcastOrStreaming: z.string().optional(),
   hashtag: z.string().optional(),
   style: z.string().optional().default("illustrated"),
-  preset: z.enum(["custom", "hype", "result", "commitment"]).optional().default("custom"),
+  preset: z.enum(["custom", "hype", "result", "commitment", "prestige"]).optional().default("custom"),
   format: z.enum(["story", "post", "banner"]).optional().default("story"),
   customPrompt: z.string().optional(),
   colorPalette: z.string().optional(),
   composition: z.string().optional(),
   lighting: z.string().optional(),
   mood: z.string().optional(),
+  strictPhotoLock: z.boolean().optional().default(true),
   refinements: z.array(z.string()).optional().default([]),
   referenceImageUrls: z.array(z.string().url()).max(14).optional().default([]),
 });
@@ -185,6 +186,7 @@ export async function POST(req: NextRequest) {
     composition,
     lighting,
     mood,
+    strictPhotoLock,
     refinements,
     referenceImageUrls: rawReferenceImageUrls,
   } = parsed.data;
@@ -211,6 +213,7 @@ export async function POST(req: NextRequest) {
     refinements,
     styleModifier: presetConfig.styleModifier,
     referenceImageCount: sanitizedRefs.length,
+    strictPhotoLock,
   });
 
   const replicateToken = process.env.REPLICATE_API_TOKEN?.trim();

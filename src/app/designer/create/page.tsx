@@ -174,27 +174,31 @@ export default function CreateAsset() {
     lighting: "",
     mood: "",
   });
-  /** Order: athlete, home logo, away logo — matches API image_input order (image 1–3). */
+  /** Order: style reference, athlete, home logo, away logo — matches API image_input order (image 1–4). */
+  const [refStyleFile, setRefStyleFile] = useState<File | null>(null);
   const [refAthleteFile, setRefAthleteFile] = useState<File | null>(null);
   const [refHomeLogoFile, setRefHomeLogoFile] = useState<File | null>(null);
   const [refAwayLogoFile, setRefAwayLogoFile] = useState<File | null>(null);
+  const [strictPhotoLock, setStrictPhotoLock] = useState(true);
 
   const refPreviews = useMemo(
     () => ({
+      style: refStyleFile ? URL.createObjectURL(refStyleFile) : null,
       athlete: refAthleteFile ? URL.createObjectURL(refAthleteFile) : null,
       homeLogo: refHomeLogoFile ? URL.createObjectURL(refHomeLogoFile) : null,
       awayLogo: refAwayLogoFile ? URL.createObjectURL(refAwayLogoFile) : null,
     }),
-    [refAthleteFile, refHomeLogoFile, refAwayLogoFile]
+    [refStyleFile, refAthleteFile, refHomeLogoFile, refAwayLogoFile]
   );
 
   useEffect(() => {
     return () => {
+      if (refPreviews.style) URL.revokeObjectURL(refPreviews.style);
       if (refPreviews.athlete) URL.revokeObjectURL(refPreviews.athlete);
       if (refPreviews.homeLogo) URL.revokeObjectURL(refPreviews.homeLogo);
       if (refPreviews.awayLogo) URL.revokeObjectURL(refPreviews.awayLogo);
     };
-  }, [refPreviews.athlete, refPreviews.homeLogo, refPreviews.awayLogo]);
+  }, [refPreviews.style, refPreviews.athlete, refPreviews.homeLogo, refPreviews.awayLogo]);
 
   const [step, setStep] = useState<"form" | "generating" | "result" | "error">("form");
   const [showOptional, setShowOptional] = useState(false);
@@ -434,6 +438,8 @@ export default function CreateAsset() {
           ? "bold"
           : preset === "result"
           ? "minimal"
+          : preset === "prestige"
+          ? "minimal"
           : preset === "commitment"
           ? "cinematic"
           : f.style,
@@ -504,7 +510,7 @@ export default function CreateAsset() {
       }
 
       const referenceImageUrls: string[] = [];
-      if (refAthleteFile || refHomeLogoFile || refAwayLogoFile) {
+      if (refStyleFile || refAthleteFile || refHomeLogoFile || refAwayLogoFile) {
         const { data: userData, error: userErr } = await supabase.auth.getUser();
         if (userErr || !userData.user) {
           if (isInitial) {
@@ -516,6 +522,7 @@ export default function CreateAsset() {
         }
         const uid = userData.user.id;
         try {
+          if (refStyleFile) referenceImageUrls.push(await uploadGenerationReference(supabase, uid, refStyleFile));
           if (refAthleteFile) referenceImageUrls.push(await uploadGenerationReference(supabase, uid, refAthleteFile));
           if (refHomeLogoFile) referenceImageUrls.push(await uploadGenerationReference(supabase, uid, refHomeLogoFile));
           if (refAwayLogoFile) referenceImageUrls.push(await uploadGenerationReference(supabase, uid, refAwayLogoFile));
@@ -554,6 +561,7 @@ export default function CreateAsset() {
           composition: form.composition || undefined,
           lighting: form.lighting || undefined,
           mood: form.mood || undefined,
+          strictPhotoLock,
           refinements: refinements.length > 0 ? refinements : undefined,
           referenceImageUrls: referenceImageUrls.length > 0 ? referenceImageUrls : undefined,
         }),
@@ -1076,7 +1084,7 @@ export default function CreateAsset() {
               </div>
             )}
 
-            {/* ── Reference images — athlete + optional logos (Replicate image_input) ─── */}
+            {/* ── Reference images — style + athlete + logos (Replicate image_input) ─── */}
             {step !== "result" && (
               <div className="rounded-xl border border-border/50 bg-card/40 p-4 space-y-3">
                 <div className="flex items-start gap-2">
@@ -1084,9 +1092,10 @@ export default function CreateAsset() {
                   <div>
                     <p className="text-xs font-semibold text-foreground uppercase tracking-wider">Reference images</p>
                     <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                      Optional. Order matters: <span className="text-foreground/80">1 — Athlete</span>,{" "}
-                      <span className="text-foreground/80">2 — Home logo</span>,{" "}
-                      <span className="text-foreground/80">3 — Away logo</span>. JPEG/PNG/GIF/WebP, max 20MB each. Sign in
+                      Optional. Order matters: <span className="text-foreground/80">1 — Style reference</span>,{" "}
+                      <span className="text-foreground/80">2 — Athlete photo</span>,{" "}
+                      <span className="text-foreground/80">3 — Home logo</span>,{" "}
+                      <span className="text-foreground/80">4 — Away logo</span>. JPEG/PNG/GIF/WebP, max 20MB each. Sign in
                       required. You are responsible for rights and accuracy of logos.
                     </p>
                     {featuredAthleteNames.length > 0 && (
@@ -1097,12 +1106,20 @@ export default function CreateAsset() {
                     )}
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   {(
                     [
                       {
+                        key: "style" as const,
+                        label: "Style reference",
+                        preview: refPreviews.style,
+                        file: refStyleFile,
+                        setFile: setRefStyleFile,
+                        inputId: "ref-style-input",
+                      },
+                      {
                         key: "athlete" as const,
-                        label: "Athlete",
+                        label: "Athlete photo",
                         preview: refPreviews.athlete,
                         file: refAthleteFile,
                         setFile: setRefAthleteFile,
@@ -1176,6 +1193,14 @@ export default function CreateAsset() {
                     </div>
                   ))}
                 </div>
+                <label className="flex items-center gap-2 text-xs text-foreground/80">
+                  <input
+                    type="checkbox"
+                    checked={strictPhotoLock}
+                    onChange={(e) => setStrictPhotoLock(e.target.checked)}
+                  />
+                  Strict athlete lock (keep athlete in image 2 unchanged; only apply design treatment)
+                </label>
               </div>
             )}
 

@@ -46,4 +46,22 @@ describe("buildMasterSportsPrompt", () => {
     expect(prompt).toContain("Optional style modifier to blend in: ESPN / Nike campaign style.");
     expect(prompt).toContain("professional, Instagram-ready layout (9:16 ratio)");
   });
+
+  it("adds strict photo-preservation rules when athlete reference image exists", () => {
+    const prompt = buildMasterSportsPrompt({
+      type: "gameday",
+      sport: "Squash",
+      homeTeam: "Trinity",
+      awayTeam: "Harvard",
+      preset: "prestige",
+      referenceImageCount: 2,
+      strictPhotoLock: true,
+    });
+
+    expect(prompt).toContain("CRITICAL PHOTO PRESERVATION RULES");
+    expect(prompt).toContain("Use image 2 as the primary base photo");
+    expect(prompt).toContain("STRICT ATHLETE LOCK");
+    expect(prompt).toContain("design-over-photo task");
+    expect(prompt).toContain("Prioritize photorealism and editorial sports design quality.");
+  });
 });
