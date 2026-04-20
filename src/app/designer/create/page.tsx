@@ -52,8 +52,13 @@ import {
   REPLICATE_IMAGE_MODEL_ID,
   REPLICATE_IMAGE_MODEL_LABEL,
 } from "@/lib/imageGen/replicateImageModel";
+import {
+  GENERATION_PRESETS,
+  type GenerationPreset,
+} from "@/lib/prompt/generationPresets";
 
 interface FormState {
+  preset: GenerationPreset;
   type: AssetType;
   sport: string;
   homeTeam: string;
@@ -149,6 +154,7 @@ function InstagramGlyph({ className }: { className?: string }) {
 export default function CreateAsset() {
   const router = useRouter();
   const [form, setForm] = useState<FormState>({
+    preset: "custom",
     type: "gameday",
     sport: "Basketball",
     homeTeam: "",
@@ -414,6 +420,26 @@ export default function CreateAsset() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  function applyPreset(preset: GenerationPreset) {
+    const selected = GENERATION_PRESETS.find((p) => p.value === preset);
+    if (!selected) return;
+    setForm((f) => ({
+      ...f,
+      preset,
+      mood: selected.moodEnergy || f.mood,
+      lighting: selected.lighting || f.lighting,
+      composition: selected.compositionFocus || f.composition,
+      style:
+        preset === "hype"
+          ? "bold"
+          : preset === "result"
+          ? "minimal"
+          : preset === "commitment"
+          ? "cinematic"
+          : f.style,
+    }));
+  }
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isRefining]);
@@ -521,6 +547,7 @@ export default function CreateAsset() {
           broadcastOrStreaming: form.broadcastOrStreaming.trim() || undefined,
           hashtag: form.hashtag.trim() || undefined,
           style: form.style,
+          preset: form.preset,
           format: form.format,
           customPrompt: form.customPrompt || undefined,
           colorPalette: form.colorPalette || undefined,
@@ -1010,6 +1037,41 @@ export default function CreateAsset() {
                       Great — hit Generate and the AI will build around your description.
                     </p>
                   )}
+                </div>
+              </div>
+            )}
+
+            {step !== "result" && (
+              <div className="rounded-xl border border-border/50 bg-card/40 p-4 space-y-3">
+                <div>
+                  <p className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                    Presets
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Choose a starting mode for consistent results. You can still fine-tune all fields below.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {GENERATION_PRESETS.map((preset) => {
+                    const active = form.preset === preset.value;
+                    return (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() => applyPreset(preset.value)}
+                        className={`text-left rounded-xl border p-3 transition-all ${
+                          active
+                            ? "border-primary/40 bg-primary/10 text-primary"
+                            : "border-border/50 bg-card text-muted-foreground hover:border-border hover:text-foreground"
+                        }`}
+                      >
+                        <div className="text-sm font-semibold">{preset.label}</div>
+                        <div className={`text-xs mt-1 ${active ? "text-primary/75" : "text-muted-foreground/70"}`}>
+                          {preset.description}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
