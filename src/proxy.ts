@@ -4,7 +4,7 @@ import type { Role } from "@/lib/types";
 import { ROLE_ROUTES } from "@/lib/types";
 
 // Routes that require authentication
-const PROTECTED = ["/designer", "/athlete", "/feed"];
+const PROTECTED = ["/designer", "/athlete", "/feed", "/settings"];
 
 // Infer the required role from the requested path
 function roleFromPath(pathname: string): Role {
@@ -14,16 +14,29 @@ function roleFromPath(pathname: string): Role {
 }
 
 function isConfigured() {
-  // DEV_BYPASS_AUTH=true in .env.local skips all auth checks
-  if (process.env.DEV_BYPASS_AUTH === "true") return false;
+  // DEV_BYPASS_AUTH=true intentionally disables auth only for local development.
+  const authBypassEnabled = process.env.DEV_BYPASS_AUTH === "true";
+  const nonProduction = process.env.NODE_ENV !== "production";
+  if (authBypassEnabled && nonProduction) return false;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
   return url.startsWith("http") && key.length > 10;
 }
 
 export async function proxy(request: NextRequest) {
-  // If Supabase is not yet configured, let everything through
+  const { pathname } = request.nextUrl;
+  const isProtected = PROTECTED.some((r) => pathname.startsWith(r));
+  const searchParams = request.nextUrl.searchParams;
+
+  // If auth is not configured, fail closed for protected routes.
   if (!isConfigured()) {
+    if (isProtected) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/auth";
+      url.searchParams.set("role", roleFromPath(pathname));
+      url.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+      return NextResponse.redirect(url);
+    }
     return NextResponse.next({ request });
   }
 
@@ -54,10 +67,6 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const { pathname } = request.nextUrl;
-  const isProtected = PROTECTED.some((r) => pathname.startsWith(r));
-  const searchParams = request.nextUrl.searchParams;
 
   // 1. Unauthenticated user hitting a protected route → send to auth
   if (isProtected && !user) {

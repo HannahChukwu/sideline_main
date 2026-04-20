@@ -109,11 +109,21 @@ src/
 The project uses Next.js 16’s **`proxy.ts`** convention (replacing the older `middleware.ts` name in this stack). It:
 
 - Refreshes the Supabase session via `getUser()` and cookie plumbing from `createServerClient`.
-- Redirects **unauthenticated** users away from protected path prefixes (`/designer`, `/athlete`, `/feed`) to `/auth`.
+- Redirects **unauthenticated** users away from protected path prefixes (`/designer`, `/athlete`, `/feed`, `/settings`) to `/auth`.
 - Redirects **authenticated** users on `/auth` to their role home (unless query flags request the auth UI).
 - Redirects users who land on the **wrong portal** for their `profiles.role`.
+- Fails closed for protected paths when Supabase auth config is missing.
 
-`DEV_BYPASS_AUTH=true` skips these checks when Supabase env is present (useful for local development).
+`DEV_BYPASS_AUTH=true` skips these checks only in non-production (useful for local development).
+
+### 4.1.1 Portal server layouts
+
+For defense in depth against forced browsing, each role portal has server-side authorization layout checks in addition to proxy routing:
+
+- `src/app/designer/layout.tsx` -> designer-only
+- `src/app/athlete/layout.tsx` -> athlete-only
+- `src/app/feed/layout.tsx` -> student-only
+- `src/app/settings/layout.tsx` -> any signed-in user
 
 ### 4.2 Server vs client
 
@@ -163,12 +173,12 @@ Reference uploads for generation use a dedicated bucket (see `GENERATION_REFEREN
 
 | Route | Role |
 |-------|------|
-| **`POST /api/generate`** | Requires **Supabase auth**; **Postgres-backed** per-user hourly/daily rate limits (`consume_generation_rate_limit` RPC); validates body with Zod; builds prompts; calls **Replicate** (and related helpers); returns generated image URL. Sanitizes `referenceImageUrls` to Supabase public object URLs only. |
+| **`POST /api/generate`** | Requires **Supabase auth + designer role**; **Postgres-backed** per-user hourly/daily rate limits (`consume_generation_rate_limit` RPC); validates body with Zod; builds prompts; calls **Replicate** (and related helpers); returns generated image URL. Sanitizes `referenceImageUrls` to Supabase public object URLs only. |
 | **`POST /api/auth/password-signin`** | Validates email/password; **Upstash** lockout after repeated failures; returns session cookies on success. |
 | **`GET /api/live-scores`** | Fetches and normalizes **NCAA** scoreboard JSON for live/final game display. |
-| **`POST /api/team-invite`** | Session user must be **`schools.manager_id`** for the given **`team_id`**; returns absolute **`/athlete/join?t=…`** URL; signs with **`TEAM_INVITE_SECRET`** (server-only). |
+| **`POST /api/team-invite`** | Session user must have **designer role** and be **`schools.manager_id`** for the given **`team_id`**; returns absolute **`/athlete/join?t=…`** URL; signs with **`TEAM_INVITE_SECRET`** (server-only). |
 | **`POST /api/team-invite/redeem`** | Validates token (HMAC + expiry); session user must be **`athlete`** or **`student`**; updates **`profiles.team_id`**. |
-| **Instagram** (`/api/instagram/*`) | OAuth connect/callback, connection status, and **publish** (Graph API: create media + publish) using decrypted tokens from `instagram_accounts`. |
+| **Instagram** (`/api/instagram/*`) | OAuth connect/callback, connection status, and **publish** (Graph API: create media + publish) using decrypted tokens. Team-scoped endpoints require **designer role** and **school-owner team authorization** (`schools.manager_id` for the `teamId`). |
 
 Other pages call Supabase **directly from the browser or server** for CRUD on profiles, assets, and program entities, relying on RLS for authorization.
 
@@ -191,8 +201,10 @@ Other pages call Supabase **directly from the browser or server** for CRUD on pr
 - **Anon key** is used in browser and server clients; no service-role client appears required for normal user flows in the documented schema.
 - **Instagram tokens** are stored encrypted; decryption happens only on the server for publish.
 - **Generate route** requires a signed-in user, enforces reference images to known Supabase paths (SSRF/open proxy), and rate-limits generations per user via Supabase Postgres (`generation_rate_buckets` + RPC).
+- **Generate route** additionally requires **designer role**.
 - **Password sign-in** uses `POST /api/auth/password-signin` plus Upstash-backed lockout (5 failures → 10-minute cooldown per email).
 - **Team invites**: minting is **school-owner–only** (verified via Supabase read on `teams` + embedded `schools.manager_id`). Tokens are **HMAC-signed**; **redeem** checks role (**athlete** / **student** only). **`TEAM_INVITE_SECRET`** must be long and server-only; missing/weak secret disables minting in production (**503**).
+- **Instagram team-scoped actions** require both role authorization (`designer`) and resource authorization (team ownership by `schools.manager_id`) to prevent IDOR/forced-browsing-style direct calls.
 - **OAuth and email flows**: redirect targets from **`next`** are restricted to same-origin relative paths to reduce open-redirect risk.
 
 ---

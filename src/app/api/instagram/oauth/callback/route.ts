@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { encryptString } from "@/lib/instagram/tokenCrypto";
+import { canManageTeam, getUserRole } from "@/lib/auth/serverAuth";
 
 function getEnv(name: string): string {
   const v = process.env[name];
@@ -32,7 +33,7 @@ async function exchangeCodeForUserAccessToken(params: {
     const text = await res.text().catch(() => "");
     throw new Error(`Token exchange failed: ${res.status} ${text}`);
   }
-  const json = (await res.json()) as { access_token?: string; error?: any };
+  const json = (await res.json()) as { access_token?: string; error?: unknown };
   if (!json.access_token) throw new Error(`Token exchange returned no access_token`);
   return json.access_token;
 }
@@ -77,7 +78,7 @@ async function findFirstInstagramBusinessAccount(params: {
   }
   const pagesJson = (await pagesRes.json()) as {
     data?: Array<{ id: string; access_token: string }>;
-    error?: any;
+    error?: unknown;
   };
 
   const pages = pagesJson.data ?? [];
@@ -111,6 +112,10 @@ export async function GET(request: NextRequest) {
 
   if (!user) {
     return NextResponse.redirect(`${origin}/auth?error=not_signed_in`);
+  }
+  const role = await getUserRole(supabase, user.id);
+  if (role !== "designer") {
+    return NextResponse.redirect(`${origin}/auth?error=forbidden`);
   }
 
   const url = new URL(request.url);
@@ -166,13 +171,8 @@ export async function GET(request: NextRequest) {
     const now = new Date().toISOString();
 
     if (teamIdForConnect) {
-      const { data: teamRow, error: teamErr } = await supabase
-        .from("teams")
-        .select("id")
-        .eq("id", teamIdForConnect)
-        .maybeSingle();
-
-      if (teamErr || !teamRow) {
+      const allowed = await canManageTeam(supabase, user.id, teamIdForConnect);
+      if (!allowed) {
         throw new Error("team_not_found_or_unauthorized");
       }
 

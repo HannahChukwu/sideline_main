@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { canManageTeam, getUserRole } from "@/lib/auth/serverAuth";
 
 function getEnv(name: string): string {
   const v = process.env[name];
@@ -21,6 +22,10 @@ export async function GET(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
+  const role = await getUserRole(supabase, user.id);
+  if (role !== "designer") {
+    return NextResponse.json({ error: "Only designer accounts can connect Instagram." }, { status: 403 });
+  }
 
   const { origin } = new URL(request.url);
   const urlObj = new URL(request.url);
@@ -31,6 +36,13 @@ export async function GET(request: NextRequest) {
     teamIdParam && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(teamIdParam)
       ? teamIdParam
       : null;
+
+  if (teamId) {
+    const allowed = await canManageTeam(supabase, user.id, teamId);
+    if (!allowed) {
+      return NextResponse.json({ error: "Forbidden team access." }, { status: 403 });
+    }
+  }
 
   const state = crypto.randomBytes(16).toString("hex");
   const redirectUri = `${origin}/api/instagram/oauth/callback`;

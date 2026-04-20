@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { signTeamInviteToken } from "@/lib/team-invite/token";
+import { getUserRole } from "@/lib/auth/serverAuth";
 
 const BodySchema = z.object({
   team_id: z.string().uuid(),
@@ -32,6 +33,10 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const role = await getUserRole(supabase, user.id);
+    if (role !== "designer") {
+      return NextResponse.json({ error: "Only designer accounts can create invite links." }, { status: 403 });
     }
 
     const teamId = parsed.data.team_id;

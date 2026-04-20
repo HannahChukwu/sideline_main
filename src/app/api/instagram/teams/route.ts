@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { TeamInstagramRow } from "@/lib/instagram/teamInstagram";
+import { getUserRole } from "@/lib/auth/serverAuth";
 
 /**
  * Teams the signed-in designer can manage, with whether Instagram is linked for each.
@@ -14,6 +15,10 @@ export async function GET() {
 
   if (userErr || !user) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+  const role = await getUserRole(supabase, user.id);
+  if (role !== "designer") {
+    return NextResponse.json({ error: "Only designer accounts can manage team Instagram." }, { status: 403 });
   }
 
   const { data: teams, error: teamsErr } = await supabase

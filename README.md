@@ -16,6 +16,12 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
   - Unauthenticated users are redirected from protected routes to `/auth`
   - Authenticated users are redirected away from wrong-role portals
   - Authenticated users hitting `/auth` are sent to their role home
+  - Protected routes now include `/settings`, and protected paths fail closed if auth config is missing
+- **Server-side role layouts** for defense in depth:
+  - `src/app/designer/layout.tsx` (designer-only)
+  - `src/app/athlete/layout.tsx` (athlete-only)
+  - `src/app/feed/layout.tsx` (student-only)
+  - `src/app/settings/layout.tsx` (signed-in users only)
 - **Profile bootstrap on signup** via DB trigger in `supabase-schema.sql` (`public.profiles` auto-created).
 
 ### Portals and pages
@@ -39,7 +45,7 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
 ### API routes
 
 - **`POST /api/generate`**
-  - Requires a **signed-in Supabase user** (401 if anonymous)
+  - Requires a **signed-in designer user** (401 if anonymous, 403 if non-designer)
   - **Rate limits** per user via **Supabase Postgres** (`consume_generation_rate_limit` RPC; fixed hour/day buckets). **503** if the migration is not applied (see [`docs/GENERATION_RATE_LIMIT_SETUP.md`](docs/GENERATION_RATE_LIMIT_SETUP.md))
   - Validates request body with Zod
   - Generates prompt/copy with Anthropic when configured (fallback prompt builder otherwise)
@@ -47,6 +53,9 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
   - Enforces strict sanitization for reference image URLs (must come from this app's Supabase public **`generation-references`** bucket)
 - **Instagram API (scaffold only—not production-ready)**  
   Route handlers exist (`/api/instagram/connect`, `/oauth/callback`, `/status`, `/publish`) for Meta OAuth, token storage, and Graph publish. **The Meta app / API flow is not wired through successfully yet**, so users cannot complete “Connect Instagram” or post generated images to Instagram from this app. Treat this as future work once Meta app review, redirect URLs, and permissions are sorted.
+  - Security hardening in place now:
+    - `/api/instagram/connect`, `/api/instagram/teams`, `/api/instagram/publish`, `/api/instagram/oauth/callback` require `designer` role
+    - team-scoped operations require school-owner authorization (`schools.manager_id`) for the target `teamId`
 - **`POST /api/auth/password-signin`**
   - Email + password sign-in with session cookies; enforces failed-attempt lockout via Redis (see **Security features**)
 - **`GET /api/live-scores`**
@@ -64,7 +73,13 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
 ## Security features
 
 - **Authentication and route gating**  
-  Supabase Auth backs sign-in. [`src/proxy.ts`](src/proxy.ts) refreshes sessions and redirects unauthenticated users away from protected routes; signed-in users are kept in the correct role portal (`designer` / `athlete` / `student`). Optional `DEV_BYPASS_AUTH` is for local debugging only.
+  Supabase Auth backs sign-in. [`src/proxy.ts`](src/proxy.ts) refreshes sessions and redirects unauthenticated users away from protected routes; signed-in users are kept in the correct role portal (`designer` / `athlete` / `student`). Optional `DEV_BYPASS_AUTH` is for local debugging only and only honored in non-production. For protected paths, missing auth config now fails closed (redirect) instead of allowing access.
+
+- **Defense in depth for forced browsing**  
+  Role checks are enforced at three layers:
+  1) edge route gating in `src/proxy.ts`  
+  2) server layouts per portal (`src/app/designer/layout.tsx`, `src/app/athlete/layout.tsx`, `src/app/feed/layout.tsx`, `src/app/settings/layout.tsx`)  
+  3) route-handler authorization (`/api/generate`, `/api/team-invite`, `/api/instagram/*`) with team ownership checks where applicable.
 
 - **Email/password sign-in lockout (brute-force slowdown)**  
   - **Flow**: The auth UI does **not** call `signInWithPassword` on the browser for email/password. It **`POST`s to [`/api/auth/password-signin`](src/app/api/auth/password-signin/route.ts)** so the server validates credentials, applies lockout logic, and **sets Supabase session cookies** on success.  
@@ -84,7 +99,7 @@ AI-powered athletics creative studio with role-based portals, Supabase auth/data
   The **`next`** query parameter is validated as a same-origin path (no `//…` open redirects) on email sign-in/sign-up and OAuth callback before redirect.
 
 - **AI generation endpoint (`POST /api/generate`)**  
-  - **401** for anonymous callers—Replicate and Anthropic are not invoked without a valid Supabase session.  
+  - **401** for anonymous callers, **403** for non-designer roles—Replicate and Anthropic are not invoked without valid authorization.
   - **Per-user rate limits** via **Supabase** table `generation_rate_buckets` and RPC **`consume_generation_rate_limit`** (hourly + daily caps; tune with `GENERATE_RL_PER_HOUR` and `GENERATE_RL_PER_DAY`). **429** when limits are exceeded (`Retry-After` set when available).  
   - **503** if the RPC/table is missing (run [`supabase-migration-generation-rate-limit.sql`](supabase-migration-generation-rate-limit.sql) or full [`supabase-schema.sql`](supabase-schema.sql)).  
   - **`SKIP_GENERATE_RATE_LIMIT=1`** bypasses limits for trusted local testing only (never on public deployments).  

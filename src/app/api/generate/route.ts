@@ -6,6 +6,7 @@ import { GENERATION_REFERENCES_BUCKET } from "@/lib/supabase/referenceUpload";
 import { consumeGenerateRateLimit } from "@/lib/rate-limit/generateRateLimit";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
 import { REPLICATE_IMAGE_MODEL_ID } from "@/lib/imageGen/replicateImageModel";
+import { getUserRole } from "@/lib/auth/serverAuth";
 
 const RequestSchema = z.object({
   type: z.enum(["gameday", "final-score", "poster", "highlight"]),
@@ -408,6 +409,10 @@ export async function POST(req: NextRequest) {
   } = await supabase.auth.getUser();
   if (authError || !user) {
     return NextResponse.json({ error: "Sign in required to generate." }, { status: 401 });
+  }
+  const role = await getUserRole(supabase, user.id);
+  if (role !== "designer") {
+    return NextResponse.json({ error: "Only designer accounts can generate assets." }, { status: 403 });
   }
 
   const parsed = RequestSchema.safeParse(body);

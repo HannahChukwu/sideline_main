@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decryptString } from "@/lib/instagram/tokenCrypto";
+import { canManageTeam, getUserRole } from "@/lib/auth/serverAuth";
 
 type MediaType = "FEED" | "STORIES";
 
@@ -20,6 +21,10 @@ export async function POST(request: NextRequest) {
 
   if (userErr) return NextResponse.json({ error: userErr.message }, { status: 401 });
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  const role = await getUserRole(supabase, user.id);
+  if (role !== "designer") {
+    return NextResponse.json({ error: "Only designer accounts can publish to Instagram." }, { status: 403 });
+  }
 
   const body = (await request.json()) as Partial<PublishBody>;
   const teamId = body.teamId;
@@ -29,6 +34,10 @@ export async function POST(request: NextRequest) {
 
   if (!teamId || typeof teamId !== "string") {
     return NextResponse.json({ error: "Missing teamId" }, { status: 400 });
+  }
+  const allowed = await canManageTeam(supabase, user.id, teamId);
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden team access." }, { status: 403 });
   }
   if (!imageUrl || typeof imageUrl !== "string") {
     return NextResponse.json({ error: "Missing imageUrl" }, { status: 400 });
