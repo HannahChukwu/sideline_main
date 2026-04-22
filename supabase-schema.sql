@@ -257,6 +257,20 @@ create policy "Managers can manage athletes for own school"
   using (public.team_managed_by_user(team_id))
   with check (public.team_managed_by_user(team_id));
 
+drop policy if exists "Athletes can self-register in linked team roster" on public.athletes;
+create policy "Athletes can self-register in linked team roster"
+  on public.athletes for insert
+  to authenticated
+  with check (
+    exists (
+      select 1
+      from public.profiles p
+      where p.id = auth.uid()
+        and p.role = 'athlete'
+        and p.team_id = athletes.team_id
+    )
+  );
+
 alter table public.schedules enable row level security;
 
 drop policy if exists "Managers can manage schedules for own school" on public.schedules;

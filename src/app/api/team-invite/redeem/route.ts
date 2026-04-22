@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
   const { data: profile, error: profileErr } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, full_name")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -48,14 +48,55 @@ export async function POST(request: Request) {
     );
   }
 
+  let athleteIdToLink: string | null = null;
+  if (role === "athlete") {
+    const normalizedName = profile?.full_name?.trim() ?? "";
+    if (normalizedName) {
+      const { data: existing, error: existingErr } = await supabase
+        .from("athletes")
+        .select("id")
+        .eq("team_id", payload.team_id)
+        .ilike("full_name", normalizedName)
+        .limit(1)
+        .maybeSingle();
+      if (existingErr) {
+        return NextResponse.json({ error: existingErr.message }, { status: 500 });
+      }
+      athleteIdToLink = existing?.id ?? null;
+    }
+
+    // If the roster has no matching athlete yet, self-register one so
+    // athlete photo library can work immediately after invite redemption.
+    if (!athleteIdToLink) {
+      const fallbackName = profile?.full_name?.trim() || `Athlete ${user.id.slice(0, 6)}`;
+      const { data: inserted, error: insertErr } = await supabase
+        .from("athletes")
+        .insert({
+          team_id: payload.team_id,
+          full_name: fallbackName,
+          number: null,
+          position: null,
+        })
+        .select("id")
+        .single();
+      if (insertErr) {
+        return NextResponse.json({ error: insertErr.message }, { status: 500 });
+      }
+      athleteIdToLink = inserted.id;
+    }
+  }
+
   const { error: updateErr } = await supabase
     .from("profiles")
-    .update({ team_id: payload.team_id })
+    .update({
+      team_id: payload.team_id,
+      athlete_id: athleteIdToLink,
+    })
     .eq("id", user.id);
 
   if (updateErr) {
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, team_id: payload.team_id });
+  return NextResponse.json({ ok: true, team_id: payload.team_id, athlete_id: athleteIdToLink });
 }
