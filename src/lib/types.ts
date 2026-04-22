@@ -89,6 +89,33 @@ export interface Database {
         Update: never;
         Relationships: [];
       };
+      asset_engagement_likes: {
+        Row: { asset_key: string; user_id: string; created_at: string };
+        Insert: { asset_key: string; user_id: string; created_at?: string };
+        Update: never;
+        Relationships: [];
+      };
+      asset_engagement_views: {
+        Row: {
+          asset_key: string;
+          user_id: string;
+          first_at: string;
+          last_at: string;
+          view_count: number;
+        };
+        Insert: {
+          asset_key: string;
+          user_id: string;
+          first_at?: string;
+          last_at?: string;
+          view_count?: number;
+        };
+        Update: Partial<{
+          last_at: string;
+          view_count: number;
+        }>;
+        Relationships: [];
+      };
       instagram_accounts: {
         Row: {
           user_id: string;
@@ -238,6 +265,10 @@ export interface Database {
       consume_generation_rate_limit: {
         Args: { p_per_hour?: number; p_per_day?: number };
         Returns: unknown;
+      };
+      record_asset_view: {
+        Args: { p_asset_key: string };
+        Returns: void;
       };
     };
     Enums: {

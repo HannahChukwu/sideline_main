@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Heart, Trophy, Star, BarChart2 } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
@@ -9,14 +9,13 @@ import { useAppStore } from "@/lib/store";
 import { createClient } from "@/lib/supabase/client";
 import { fetchProfileTeamId } from "@/lib/supabase/profile";
 import { getTeamDisplayForViewer } from "@/lib/supabase/teams";
+import { useEngagement } from "@/lib/hooks/useEngagement";
 
 export default function AthleteDashboard() {
   const [mounted, setMounted] = useState(false);
   const [linkedTeamLabel, setLinkedTeamLabel] = useState<string | null>(null);
 
-  const assets     = useAppStore((s) => s.assets);
-  const toggleLike = useAppStore((s) => s.toggleLike);
-  const isLiked    = useAppStore((s) => s.isLiked);
+  const assets = useAppStore((s) => s.assets);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -43,9 +42,15 @@ export default function AthleteDashboard() {
     };
   }, []);
 
-  const published    = mounted ? assets.filter((a) => a.status === "published") : [];
-  const likedAssets  = mounted ? published.filter((a) => isLiked(a.id))  : [];
-  const pendingAssets = mounted ? published.filter((a) => !isLiked(a.id)) : [];
+  const published = useMemo(
+    () => (mounted ? assets.filter((a) => a.status === "published") : []),
+    [mounted, assets]
+  );
+  const engagementKeys = useMemo(() => published.map((a) => a.id), [published]);
+  const engagement     = useEngagement(engagementKeys);
+
+  const likedAssets   = mounted ? published.filter((a) => engagement.get(a.id).liked_by_me)  : [];
+  const pendingAssets = mounted ? published.filter((a) => !engagement.get(a.id).liked_by_me) : [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -117,20 +122,25 @@ export default function AthleteDashboard() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {pendingAssets.map((asset, i) => (
-                <div
-                  key={asset.id}
-                  className="animate-fade-up"
-                  style={{ animationDelay: `${i * 60}ms`, animationFillMode: "both" }}
-                >
-                  <AssetCard
-                    asset={asset}
-                    variant="athlete"
-                    liked={false}
-                    onLike={toggleLike}
-                  />
-                </div>
-              ))}
+              {pendingAssets.map((asset, i) => {
+                const eng = engagement.get(asset.id);
+                return (
+                  <div
+                    key={asset.id}
+                    className="animate-fade-up"
+                    style={{ animationDelay: `${i * 60}ms`, animationFillMode: "both" }}
+                  >
+                    <AssetCard
+                      asset={asset}
+                      variant="athlete"
+                      liked={false}
+                      likeCount={eng.like_count}
+                      viewCount={eng.view_count}
+                      onLike={engagement.toggleLike}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -145,15 +155,20 @@ export default function AthleteDashboard() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 opacity-70">
-              {likedAssets.map((asset) => (
-                <AssetCard
-                  key={asset.id}
-                  asset={asset}
-                  variant="athlete"
-                  liked
-                  onLike={toggleLike}
-                />
-              ))}
+              {likedAssets.map((asset) => {
+                const eng = engagement.get(asset.id);
+                return (
+                  <AssetCard
+                    key={asset.id}
+                    asset={asset}
+                    variant="athlete"
+                    liked
+                    likeCount={eng.like_count}
+                    viewCount={eng.view_count}
+                    onLike={engagement.toggleLike}
+                  />
+                );
+              })}
             </div>
           </div>
         )}

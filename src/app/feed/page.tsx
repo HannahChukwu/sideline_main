@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
-  Heart, Activity, Zap,
+  Heart, Eye, Activity, Zap,
   MessageSquare, ExternalLink, Sparkles,
 } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { useAppStore } from "@/lib/store";
 import type { DesignerUpdate, StoreAsset } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { useEngagement } from "@/lib/hooks/useEngagement";
 
 const SPORTS_FILTER = ["All", "Basketball", "Soccer", "Track & Field", "Swimming", "Baseball", "Volleyball"];
 
@@ -46,15 +47,20 @@ function timeAgo(iso: string) {
 
 /* ─── Asset Card with scroll-triggered animation & heart pop ─────────────────── */
 function FeedAssetCard({
-  asset, liked, onLike, index,
+  asset, liked, likeCount, viewCount, onLike, index,
 }: {
-  asset: StoreAsset; liked: boolean; onLike: (id: string) => void; index: number;
+  asset: StoreAsset;
+  liked: boolean;
+  likeCount: number;
+  viewCount: number;
+  onLike: (id: string) => void | Promise<void>;
+  index: number;
 }) {
   const { ref, visible } = useInView();
   const [popped, setPopped] = useState(false);
 
   function handleLike() {
-    onLike(asset.id);
+    void onLike(asset.id);
     setPopped(true);
     setTimeout(() => setPopped(false), 400);
   }
@@ -123,20 +129,29 @@ function FeedAssetCard({
                 {new Date(asset.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
               </span>
             </div>
-            <button
-              onClick={(e) => { e.preventDefault(); handleLike(); }}
-              className={cn(
-                "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-lg",
-                liked ? "text-red-400 bg-red-500/10" : "text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
-              )}
-            >
-              <Heart className={cn(
-                "w-3.5 h-3.5 transition-all",
-                liked && "fill-red-400",
-                popped && "animate-heart-pop"
-              )} />
-              <span className="tabular-nums">{asset.likes}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <div
+                className="flex items-center gap-1 text-[11px] text-muted-foreground/70"
+                title={`${viewCount} view${viewCount === 1 ? "" : "s"}`}
+              >
+                <Eye className="w-3 h-3" />
+                <span className="tabular-nums">{viewCount}</span>
+              </div>
+              <button
+                onClick={(e) => { e.preventDefault(); handleLike(); }}
+                className={cn(
+                  "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-lg",
+                  liked ? "text-red-400 bg-red-500/10" : "text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+                )}
+              >
+                <Heart className={cn(
+                  "w-3.5 h-3.5 transition-all",
+                  liked && "fill-red-400",
+                  popped && "animate-heart-pop"
+                )} />
+                <span className="tabular-nums">{likeCount}</span>
+              </button>
+            </div>
           </div>
         </div>
       </Link>
@@ -396,15 +411,26 @@ export default function FanFeed() {
   const [activeTab, setActiveTab]     = useState<"posters" | "updates">("posters");
   const [mounted, setMounted]         = useState(false);
 
-  const assets     = useAppStore((s) => s.assets);
-  const toggleLike = useAppStore((s) => s.toggleLike);
-  const isLiked    = useAppStore((s) => s.isLiked);
+  const assets = useAppStore((s) => s.assets);
 
   useEffect(() => { setMounted(true); }, []);
 
-  const published = mounted ? assets.filter((a) => a.status === "published") : [];
+  const published = useMemo(
+    () => (mounted ? assets.filter((a) => a.status === "published") : []),
+    [mounted, assets]
+  );
   const filtered  = sportFilter === "All" ? published : published.filter((a) => a.sport === sportFilter);
-  const featured  = [...published].sort((a, b) => b.likes - a.likes)[0];
+
+  // Live engagement (likes/views) keyed by asset id, shared across all profiles via Supabase.
+  const engagementKeys = useMemo(() => published.map((a) => a.id), [published]);
+  const engagement = useEngagement(engagementKeys);
+
+  // Featured = most-liked using live counts (falls back to seed likes).
+  const featured = [...published].sort((a, b) => {
+    const la = engagement.get(a.id).like_count || a.likes;
+    const lb = engagement.get(b.id).like_count || b.likes;
+    return lb - la;
+  })[0];
 
   const totalUpdates = published.reduce((n, a) => n + (a.updates?.length ?? 0), 0);
 
@@ -464,17 +490,21 @@ export default function FanFeed() {
                       )}
                       <div className="flex items-center gap-3">
                         <button
-                          onClick={(e) => { e.preventDefault(); toggleLike(featured.id); }}
+                          onClick={(e) => { e.preventDefault(); void engagement.toggleLike(featured.id); }}
                           className={cn(
                             "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all",
-                            isLiked(featured.id)
+                            engagement.get(featured.id).liked_by_me
                               ? "bg-red-500/20 text-red-400 border border-red-500/30"
                               : "bg-white/10 text-white hover:bg-white/20 border border-white/10"
                           )}
                         >
-                          <Heart className={cn("w-4 h-4", isLiked(featured.id) && "fill-red-400")} />
-                          {featured.likes}
+                          <Heart className={cn("w-4 h-4", engagement.get(featured.id).liked_by_me && "fill-red-400")} />
+                          {engagement.get(featured.id).like_count}
                         </button>
+                        <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-xs font-semibold text-white/70">
+                          <Eye className="w-3.5 h-3.5" />
+                          {engagement.get(featured.id).view_count}
+                        </div>
                         {(featured.updates?.length ?? 0) > 0 && (
                           <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-500/15 border border-green-500/25 text-xs font-semibold text-green-400">
                             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -553,15 +583,20 @@ export default function FanFeed() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {filtered.map((asset, i) => (
-                  <FeedAssetCard
-                    key={asset.id}
-                    asset={asset}
-                    liked={isLiked(asset.id)}
-                    onLike={toggleLike}
-                    index={i}
-                  />
-                ))}
+                {filtered.map((asset, i) => {
+                  const eng = engagement.get(asset.id);
+                  return (
+                    <FeedAssetCard
+                      key={asset.id}
+                      asset={asset}
+                      liked={eng.liked_by_me}
+                      likeCount={eng.like_count}
+                      viewCount={eng.view_count}
+                      onLike={engagement.toggleLike}
+                      index={i}
+                    />
+                  );
+                })}
               </div>
 
               {mounted && filtered.length === 0 && (

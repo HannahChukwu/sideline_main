@@ -34,7 +34,11 @@ interface AssetCardProps {
   /** "designer" = creator view, "athlete" = team feedback view, "student" / "fan" = public view */
   variant?: "designer" | "athlete" | "student" | "fan";
   liked?: boolean;
-  onLike?: (id: string) => void;
+  /** Live like count from Supabase. Falls back to `asset.likes` when unset. */
+  likeCount?: number;
+  /** Live view count from Supabase. Hidden when undefined. */
+  viewCount?: number;
+  onLike?: (id: string) => void | Promise<void>;
   /** Designer dashboard only — promote a draft to published */
   onPublish?: (id: string) => void;
   /** Designer dashboard only — permanently delete this asset */
@@ -55,11 +59,21 @@ const typeLabels: Record<string, string> = {
   "highlight":   "Highlight",
 };
 
-export function AssetCard({ asset, variant = "designer", liked = false, onLike, onPublish, onDelete }: AssetCardProps) {
+export function AssetCard({
+  asset,
+  variant = "designer",
+  liked = false,
+  likeCount,
+  viewCount,
+  onLike,
+  onPublish,
+  onDelete,
+}: AssetCardProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const isPublished  = asset.status === "published";
   const canLike      = variant !== "designer";
   const updateCount  = asset.updates?.length ?? 0;
+  const displayedLikes = likeCount ?? asset.likes ?? 0;
 
   return (
     <div className="group relative rounded-xl overflow-hidden border border-border/50 bg-card transition-all duration-300 hover:border-border hover:shadow-2xl hover:shadow-black/50 hover:-translate-y-0.5">
@@ -180,13 +194,18 @@ export function AssetCard({ asset, variant = "designer", liked = false, onLike, 
               )}
             >
               <Heart className={cn("w-3.5 h-3.5 transition-all", liked && "fill-red-400 scale-110")} />
-              <span className="tabular-nums">{asset.likes}</span>
+              <span className="tabular-nums">{displayedLikes}</span>
             </button>
 
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Eye className="w-3.5 h-3.5" />
-              <span>{Math.max(asset.likes * 4 + 10, 10)}</span>
-            </div>
+            {viewCount !== undefined && (
+              <div
+                className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                title={`${viewCount} view${viewCount === 1 ? "" : "s"}`}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span className="tabular-nums">{viewCount}</span>
+              </div>
+            )}
 
             {/* Updates count */}
             {updateCount > 0 && (

@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useEffect, useRef, use } from "react";
+import { useMemo, useState, useEffect, useRef, use } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Heart, Send, Zap, Clock, CheckCircle, Trash2,
+  ArrowLeft, Heart, Eye, Send, Zap, Clock, CheckCircle, Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
+import { useEngagement } from "@/lib/hooks/useEngagement";
+import { createClient } from "@/lib/supabase/client";
+import { recordAssetView } from "@/lib/supabase/engagement";
 
 const typeColors: Record<string, string> = {
   "gameday":     "bg-orange-500/10 text-orange-400 border-orange-500/20",
@@ -47,12 +50,35 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
 
   const assets          = useAppStore((s) => s.assets);
   const currentDesigner = useAppStore((s) => s.currentDesigner);
-  const toggleLike      = useAppStore((s) => s.toggleLike);
-  const isLiked         = useAppStore((s) => s.isLiked);
   const addUpdate       = useAppStore((s) => s.addUpdate);
   const deleteAsset     = useAppStore((s) => s.deleteAsset);
 
   useEffect(() => { setMounted(true); }, []);
+
+  // Live shared likes/views (keyed by asset id) across all profiles.
+  const engagementKeys = useMemo(() => [id], [id]);
+  const engagement = useEngagement(engagementKeys);
+
+  // Record one view per page load for the current user. The RPC bumps a
+  // per-(user, asset) counter; total = SUM across users.
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    const supabase = createClient();
+    (async () => {
+      try {
+        await recordAssetView(supabase, id);
+        if (!cancelled) await engagement.refresh();
+      } catch {
+        // non-fatal: view tracking shouldn't block the page
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Only fire on first mount per asset id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const asset = mounted ? assets.find((a) => a.id === id) : null;
 
@@ -74,7 +100,8 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   const isDesigner    = !!currentDesigner && currentDesigner === asset.designerName;
-  const liked         = isLiked(asset.id);
+  const liveEng       = engagement.get(asset.id);
+  const liked         = liveEng.liked_by_me;
   const updates       = asset.updates ?? [];
 
   function handlePost() {
@@ -202,21 +229,35 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                   <p className="text-sm text-muted-foreground">{asset.tagline}</p>
                 )}
               </div>
-              {/* Like button */}
-              {!isDesigner && (
-                <button
-                  onClick={() => toggleLike(asset.id)}
-                  className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-semibold transition-all",
-                    liked
-                      ? "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20"
-                      : "bg-white/5 border-white/10 text-muted-foreground hover:text-red-400 hover:border-red-500/30"
-                  )}
+              {/* Like + view counts */}
+              <div className="flex items-center gap-2">
+                <div
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-sm font-semibold text-muted-foreground"
+                  title={`${liveEng.view_count} view${liveEng.view_count === 1 ? "" : "s"}`}
                 >
-                  <Heart className={cn("w-4 h-4 transition-all", liked && "fill-red-400 scale-110")} />
-                  <span className="tabular-nums">{asset.likes}</span>
-                </button>
-              )}
+                  <Eye className="w-4 h-4" />
+                  <span className="tabular-nums">{liveEng.view_count}</span>
+                </div>
+                {!isDesigner ? (
+                  <button
+                    onClick={() => void engagement.toggleLike(asset.id)}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-semibold transition-all",
+                      liked
+                        ? "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20"
+                        : "bg-white/5 border-white/10 text-muted-foreground hover:text-red-400 hover:border-red-500/30"
+                    )}
+                  >
+                    <Heart className={cn("w-4 h-4 transition-all", liked && "fill-red-400 scale-110")} />
+                    <span className="tabular-nums">{liveEng.like_count}</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 bg-white/5 text-sm font-semibold text-muted-foreground">
+                    <Heart className="w-4 h-4" />
+                    <span className="tabular-nums">{liveEng.like_count}</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
