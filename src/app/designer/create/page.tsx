@@ -35,6 +35,7 @@ import {
 } from "@/lib/supabase/referenceUpload";
 import { getTeamsForDesigner } from "@/lib/supabase/teams";
 import { getAthletesForTeam } from "@/lib/supabase/athletes";
+import { listAthletePhotosByAthleteIds, type AthletePhoto } from "@/lib/supabase/athletePhotos";
 import { getSchedulesForTeam, type ScheduleRow } from "@/lib/supabase/schedules";
 import type { Athlete, Team } from "@/lib/pipeline/types";
 import { Button } from "@/components/ui/button";
@@ -223,6 +224,8 @@ export default function CreateAsset() {
   const [genAthleteIds, setGenAthleteIds] = useState<string[]>([]);
   const [genMatchId, setGenMatchId] = useState<string | null>(null);
   const [ctxRoster, setCtxRoster] = useState<Athlete[]>([]);
+  const [athletePhotoLibrary, setAthletePhotoLibrary] = useState<Record<string, AthletePhoto[]>>({});
+  const [selectedAthletePhotoByAthleteId, setSelectedAthletePhotoByAthleteId] = useState<Record<string, string>>({});
   const [ctxMatchRows, setCtxMatchRows] = useState<ScheduleRow[]>([]);
   const [ctxMatchErr, setCtxMatchErr] = useState<string | null>(null);
   // Instagram (per athletics team)
@@ -283,6 +286,8 @@ export default function CreateAsset() {
   useEffect(() => {
     if (!genTeamId) {
       setCtxRoster([]);
+      setAthletePhotoLibrary({});
+      setSelectedAthletePhotoByAthleteId({});
       setCtxMatchRows([]);
       setCtxMatchErr(null);
       return;
@@ -313,10 +318,42 @@ export default function CreateAsset() {
     };
   }, [genTeamId, supabase]);
 
+  useEffect(() => {
+    const rosterIds = Array.from(new Set(ctxRoster.map((a) => a.id)));
+    if (rosterIds.length === 0) {
+      setAthletePhotoLibrary({});
+      return;
+    }
+    let cancelled = false;
+    listAthletePhotosByAthleteIds(supabase, rosterIds)
+      .then((map) => {
+        if (!cancelled) setAthletePhotoLibrary(map);
+      })
+      .catch(() => {
+        if (!cancelled) setAthletePhotoLibrary({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ctxRoster, supabase]);
+
   const featuredAthleteNames = useMemo(() => {
     const set = new Set(genAthleteIds);
     return ctxRoster.filter((a) => set.has(a.id)).map((a) => a.fullName);
   }, [ctxRoster, genAthleteIds]);
+
+  const selectedAthletesForCtx = useMemo(() => {
+    const set = new Set(genAthleteIds);
+    return ctxRoster.filter((a) => set.has(a.id));
+  }, [ctxRoster, genAthleteIds]);
+
+  const selectedAthleteReferenceUrl = useMemo(() => {
+    for (const athleteId of genAthleteIds) {
+      const picked = selectedAthletePhotoByAthleteId[athleteId];
+      if (picked) return picked;
+    }
+    return null;
+  }, [genAthleteIds, selectedAthletePhotoByAthleteId]);
 
   function toggleFeaturedAthlete(id: string) {
     setGenAthleteIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -325,6 +362,7 @@ export default function CreateAsset() {
   function selectTeamForCtx(id: string) {
     setGenTeamId(id);
     setGenAthleteIds([]);
+    setSelectedAthletePhotoByAthleteId({});
     setGenMatchId(null);
   }
 
@@ -510,6 +548,11 @@ export default function CreateAsset() {
       }
 
       const referenceImageUrls: string[] = [];
+      let uploadedStyleUrl: string | null = null;
+      let uploadedAthleteUrl: string | null = null;
+      let uploadedHomeLogoUrl: string | null = null;
+      let uploadedAwayLogoUrl: string | null = null;
+
       if (refStyleFile || refAthleteFile || refHomeLogoFile || refAwayLogoFile) {
         const { data: userData, error: userErr } = await supabase.auth.getUser();
         if (userErr || !userData.user) {
@@ -522,10 +565,10 @@ export default function CreateAsset() {
         }
         const uid = userData.user.id;
         try {
-          if (refStyleFile) referenceImageUrls.push(await uploadGenerationReference(supabase, uid, refStyleFile));
-          if (refAthleteFile) referenceImageUrls.push(await uploadGenerationReference(supabase, uid, refAthleteFile));
-          if (refHomeLogoFile) referenceImageUrls.push(await uploadGenerationReference(supabase, uid, refHomeLogoFile));
-          if (refAwayLogoFile) referenceImageUrls.push(await uploadGenerationReference(supabase, uid, refAwayLogoFile));
+          if (refStyleFile) uploadedStyleUrl = await uploadGenerationReference(supabase, uid, refStyleFile);
+          if (refAthleteFile) uploadedAthleteUrl = await uploadGenerationReference(supabase, uid, refAthleteFile);
+          if (refHomeLogoFile) uploadedHomeLogoUrl = await uploadGenerationReference(supabase, uid, refHomeLogoFile);
+          if (refAwayLogoFile) uploadedAwayLogoUrl = await uploadGenerationReference(supabase, uid, refAwayLogoFile);
         } catch (upErr) {
           const msg = upErr instanceof Error ? upErr.message : "Reference upload failed";
           if (isInitial) {
@@ -536,6 +579,12 @@ export default function CreateAsset() {
           return;
         }
       }
+      // Keep slot order stable for API: style -> athlete -> home logo -> away logo.
+      if (uploadedStyleUrl) referenceImageUrls.push(uploadedStyleUrl);
+      if (uploadedAthleteUrl) referenceImageUrls.push(uploadedAthleteUrl);
+      else if (selectedAthleteReferenceUrl) referenceImageUrls.push(selectedAthleteReferenceUrl);
+      if (uploadedHomeLogoUrl) referenceImageUrls.push(uploadedHomeLogoUrl);
+      if (uploadedAwayLogoUrl) referenceImageUrls.push(uploadedAwayLogoUrl);
 
       const res = await fetch("/api/generate", {
         method: "POST",
@@ -878,26 +927,73 @@ export default function CreateAsset() {
                         No players on this roster yet. Add them on the Team tab, or go back and pick another team.
                       </p>
                     ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {ctxRoster.map((a) => {
-                          const on = genAthleteIds.includes(a.id);
-                          return (
-                            <button
-                              key={a.id}
-                              type="button"
-                              onClick={() => toggleFeaturedAthlete(a.id)}
-                              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-all ${
-                                on
-                                  ? "border-primary/40 bg-primary/15 text-primary"
-                                  : "border-border/50 bg-card text-muted-foreground hover:border-border"
-                              }`}
-                            >
-                              {on && <Check className="w-3.5 h-3.5" />}
-                              {a.fullName}
-                              {a.number ? ` · #${a.number}` : ""}
-                            </button>
-                          );
-                        })}
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap gap-2">
+                          {ctxRoster.map((a) => {
+                            const on = genAthleteIds.includes(a.id);
+                            return (
+                              <button
+                                key={a.id}
+                                type="button"
+                                onClick={() => toggleFeaturedAthlete(a.id)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-all ${
+                                  on
+                                    ? "border-primary/40 bg-primary/15 text-primary"
+                                    : "border-border/50 bg-card text-muted-foreground hover:border-border"
+                                }`}
+                              >
+                                {on && <Check className="w-3.5 h-3.5" />}
+                                {a.fullName}
+                                {a.number ? ` · #${a.number}` : ""}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {selectedAthletesForCtx.length > 0 && (
+                          <div className="rounded-xl border border-border/40 bg-card/40 p-3 space-y-3">
+                            <p className="text-[11px] text-muted-foreground">
+                              For each selected athlete, you can pick a photo from their uploaded library.
+                              If no local upload is set for slot 2, the first selected library photo is used.
+                            </p>
+                            <div className="space-y-2">
+                              {selectedAthletesForCtx.map((athlete) => {
+                                const library = athletePhotoLibrary[athlete.id] ?? [];
+                                const selectedUrl = selectedAthletePhotoByAthleteId[athlete.id] ?? "";
+                                return (
+                                  <div key={athlete.id} className="rounded-lg border border-border/50 p-2.5">
+                                    <div className="text-xs font-semibold text-foreground mb-1.5">
+                                      {athlete.fullName}
+                                    </div>
+                                    {library.length === 0 ? (
+                                      <p className="text-[11px] text-muted-foreground">
+                                        No uploaded athlete photos yet.
+                                      </p>
+                                    ) : (
+                                      <select
+                                        value={selectedUrl}
+                                        onChange={(e) =>
+                                          setSelectedAthletePhotoByAthleteId((prev) => ({
+                                            ...prev,
+                                            [athlete.id]: e.target.value,
+                                          }))
+                                        }
+                                        className="w-full px-2.5 py-2 rounded-lg bg-card border border-border/50 text-xs text-foreground focus:outline-none focus:border-primary/40"
+                                      >
+                                        <option value="">Don&apos;t use library photo</option>
+                                        {library.map((photo) => (
+                                          <option key={photo.id} value={photo.public_url}>
+                                            {photo.original_name || `Photo ${new Date(photo.created_at).toLocaleDateString()}`}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1100,8 +1196,10 @@ export default function CreateAsset() {
                     </p>
                     {featuredAthleteNames.length > 0 && (
                       <p className="text-[11px] text-primary/80 mt-2">
-                        Selected for this asset: {featuredAthleteNames.join(", ")} — upload their photo in slot 1 if you
-                        want likeness in the poster.
+                        Selected for this asset: {featuredAthleteNames.join(", ")}.
+                        {selectedAthleteReferenceUrl
+                          ? " A library photo is set for the athlete reference slot."
+                          : " Upload a local athlete photo in slot 2, or choose one in step 2."}
                       </p>
                     )}
                   </div>

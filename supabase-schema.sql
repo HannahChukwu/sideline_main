@@ -112,12 +112,25 @@ create table if not exists public.schedules (
 
 -- Optional: link signed-in athletes (profile) to a team so they can read the shared schedule (RLS below).
 alter table public.profiles add column if not exists team_id uuid references public.teams(id) on delete set null;
+-- Optional: link athlete account -> exact roster athlete row for picture library identity.
+alter table public.profiles add column if not exists athlete_id uuid references public.athletes(id) on delete set null;
 
 -- Logos for schools/teams (stored in Supabase Storage; this table tracks paths)
 create table if not exists public.logos (
   id            uuid primary key default gen_random_uuid(),
   school_id     uuid references public.schools(id) on delete cascade,
   team_id       uuid references public.teams(id) on delete cascade,
+  storage_path  text        not null,
+  mime_type     text        not null,
+  original_name text,
+  created_at    timestamptz not null default now()
+);
+
+-- Athlete-uploaded photos for designer generation references.
+create table if not exists public.athlete_photos (
+  id            uuid primary key default gen_random_uuid(),
+  athlete_id    uuid        not null references public.athletes(id) on delete cascade,
+  uploaded_by   uuid        not null references auth.users(id) on delete cascade,
   storage_path  text        not null,
   mime_type     text        not null,
   original_name text,
@@ -263,6 +276,39 @@ create policy "Athletes can view own team schedule"
       where p.id = auth.uid()
         and p.team_id is not null
         and p.team_id = schedules.team_id
+    )
+  );
+
+alter table public.athlete_photos enable row level security;
+
+drop policy if exists "Athletes can read own uploaded photos" on public.athlete_photos;
+create policy "Athletes can read own uploaded photos"
+  on public.athlete_photos for select
+  to authenticated
+  using (uploaded_by = auth.uid());
+
+drop policy if exists "Athletes can insert own uploaded photos" on public.athlete_photos;
+create policy "Athletes can insert own uploaded photos"
+  on public.athlete_photos for insert
+  to authenticated
+  with check (uploaded_by = auth.uid());
+
+drop policy if exists "Athletes can delete own uploaded photos" on public.athlete_photos;
+create policy "Athletes can delete own uploaded photos"
+  on public.athlete_photos for delete
+  to authenticated
+  using (uploaded_by = auth.uid());
+
+drop policy if exists "Designers can read managed team athlete photos" on public.athlete_photos;
+create policy "Designers can read managed team athlete photos"
+  on public.athlete_photos for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.athletes a
+      where a.id = athlete_photos.athlete_id
+        and public.team_managed_by_user(a.team_id)
     )
   );
 
@@ -619,6 +665,56 @@ create policy "Authenticated delete own generated-posters"
   to authenticated
   using (
     bucket_id = 'generated-posters'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- ============================================================
+-- STORAGE — Athlete photo library uploads (public URLs)
+-- Path convention: {auth.uid()}/{uuid}.{ext}
+-- ============================================================
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'athlete-photos',
+  'athlete-photos',
+  true,
+  20971520,
+  array['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Public read athlete-photos" on storage.objects;
+create policy "Public read athlete-photos"
+  on storage.objects for select
+  using (bucket_id = 'athlete-photos');
+
+drop policy if exists "Authenticated insert own athlete-photos folder" on storage.objects;
+create policy "Authenticated insert own athlete-photos folder"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'athlete-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Authenticated update own athlete-photos folder" on storage.objects;
+create policy "Authenticated update own athlete-photos folder"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'athlete-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Authenticated delete own athlete-photos folder" on storage.objects;
+create policy "Authenticated delete own athlete-photos folder"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'athlete-photos'
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 

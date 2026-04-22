@@ -7,6 +7,8 @@ export type Profile = {
   email: string | null;
   /** When set (usually for athletes), RLS allows reading `schedules` for this team. */
   team_id: string | null;
+  /** Optional roster link used for athlete photo library and identity mapping. */
+  athlete_id: string | null;
   created_at: string;
 };
 
@@ -16,7 +18,11 @@ export interface Database {
     Tables: {
       profiles: {
         Row: Profile;
-        Insert: Omit<Profile, "created_at" | "team_id"> & { created_at?: string; team_id?: string | null };
+        Insert: Omit<Profile, "created_at" | "team_id" | "athlete_id"> & {
+          created_at?: string;
+          team_id?: string | null;
+          athlete_id?: string | null;
+        };
         Update: Partial<Omit<Profile, "id">>;
         Relationships: [];
       };
@@ -176,6 +182,34 @@ export interface Database {
         Row: { id: string; team_id: string; full_name: string; number: string | null; position: string | null; created_at: string };
         Insert: { id?: string; team_id: string; full_name: string; number?: string | null; position?: string | null; created_at?: string };
         Update: Partial<{ team_id: string; full_name: string; number: string | null; position: string | null }>;
+        Relationships: [];
+      };
+      athlete_photos: {
+        Row: {
+          id: string;
+          athlete_id: string;
+          uploaded_by: string;
+          storage_path: string;
+          mime_type: string;
+          original_name: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          athlete_id: string;
+          uploaded_by: string;
+          storage_path: string;
+          mime_type: string;
+          original_name?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<{
+          athlete_id: string;
+          uploaded_by: string;
+          storage_path: string;
+          mime_type: string;
+          original_name: string | null;
+        }>;
         Relationships: [];
       };
       schedules: {

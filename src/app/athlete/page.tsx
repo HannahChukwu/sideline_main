@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Heart, Trophy, Star, BarChart2 } from "lucide-react";
+import { Heart, Trophy, Star, Images } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { AssetCard } from "@/components/designer/asset-card";
 import { useAppStore } from "@/lib/store";
@@ -77,11 +77,11 @@ export default function AthleteDashboard() {
                 </div>
               )}
               <Link
-                href="/athlete/stats"
+                href="/athlete/pictures"
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
               >
-                <BarChart2 className="w-3.5 h-3.5" />
-                My Stats
+                <Images className="w-3.5 h-3.5" />
+                My Pictures
               </Link>
             </div>
           </div>
@@ -135,7 +135,6 @@ export default function AthleteDashboard() {
                       variant="athlete"
                       liked={false}
                       likeCount={eng.like_count}
-                      viewCount={eng.view_count}
                       onLike={engagement.toggleLike}
                     />
                   </div>
@@ -164,7 +163,6 @@ export default function AthleteDashboard() {
                     variant="athlete"
                     liked
                     likeCount={eng.like_count}
-                    viewCount={eng.view_count}
                     onLike={engagement.toggleLike}
                   />
                 );

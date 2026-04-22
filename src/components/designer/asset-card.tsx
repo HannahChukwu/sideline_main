@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Heart, Eye, CheckCircle, Clock, MessageSquare, Trash2, X } from "lucide-react";
+import { Heart, Eye, CheckCircle, Clock, ImageIcon, MessageSquare, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -104,15 +104,26 @@ export function AssetCard({
       {/* Clickable image area → detail page */}
       <Link href={`/asset/${asset.id}`} className="block">
         <div className="relative aspect-[16/9] overflow-hidden bg-muted">
-          <Image
-            src={asset.imageUrl}
-            alt={asset.title}
-            fill
-            className="object-cover transition-transform duration-500 group-hover:scale-105"
-            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-            unoptimized
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+          {variant === "athlete" ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-primary/15 via-muted to-muted/80">
+              <ImageIcon className="w-10 h-10 text-muted-foreground/45 mb-2" strokeWidth={1.25} />
+              <p className="px-4 text-center text-xs font-medium text-foreground/70 line-clamp-2">
+                {asset.title}
+              </p>
+            </div>
+          ) : (
+            <>
+              <Image
+                src={asset.imageUrl}
+                alt={asset.title}
+                fill
+                className="object-cover transition-transform duration-500 group-hover:scale-105"
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                unoptimized
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+            </>
+          )}
 
           {/* Top badges */}
           <div className="absolute top-3 left-3 right-3 flex items-start justify-between">
@@ -140,8 +151,8 @@ export function AssetCard({
             </div>
           )}
 
-          {/* Score overlay for final-score type */}
-          {asset.type === "final-score" && asset.homeScore !== undefined && (
+          {/* Score overlay for final-score type (not on athlete placeholder — hard to read) */}
+          {variant !== "athlete" && asset.type === "final-score" && asset.homeScore !== undefined && (
             <div className="absolute bottom-0 left-0 right-0 p-3">
               <div className="flex items-baseline gap-3">
                 <div className="text-center">

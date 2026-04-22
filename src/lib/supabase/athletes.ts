@@ -38,3 +38,43 @@ export async function insertAthlete(
   });
   if (error) throw error;
 }
+
+export async function getAthleteById(supabase: Client, athleteId: string): Promise<Athlete | null> {
+  const { data, error } = await supabase
+    .from("athletes")
+    .select("id, team_id, full_name, number, position")
+    .eq("id", athleteId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    id: data.id,
+    teamId: data.team_id,
+    fullName: data.full_name,
+    number: data.number ?? undefined,
+    position: data.position ?? undefined,
+  };
+}
+
+export async function findAthleteByTeamAndName(
+  supabase: Client,
+  teamId: string,
+  fullName: string
+): Promise<Athlete | null> {
+  const normalized = fullName.trim().toLowerCase();
+  if (!normalized) return null;
+  const { data, error } = await supabase
+    .from("athletes")
+    .select("id, team_id, full_name, number, position")
+    .eq("team_id", teamId);
+  if (error) throw error;
+  const match = (data ?? []).find((row) => row.full_name.trim().toLowerCase() === normalized);
+  if (!match) return null;
+  return {
+    id: match.id,
+    teamId: match.team_id,
+    fullName: match.full_name,
+    number: match.number ?? undefined,
+    position: match.position ?? undefined,
+  };
+}
