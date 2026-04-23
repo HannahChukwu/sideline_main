@@ -49,6 +49,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [viewerRole, setViewerRole] = useState<Role | null>(null);
   const [viewerName, setViewerName] = useState<string | null>(null);
+  const [viewerEmail, setViewerEmail] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const assets          = useAppStore((s) => s.assets);
@@ -68,17 +69,19 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
         if (!user || cancelled) return;
         const { data: profile } = await supabase
           .from("profiles")
-          .select("role, full_name")
+          .select("role, full_name, email")
           .eq("id", user.id)
           .maybeSingle();
         if (cancelled) return;
         const role = profile?.role;
         setViewerRole(role === "designer" || role === "athlete" || role === "student" ? role : null);
         setViewerName(profile?.full_name ?? null);
+        setViewerEmail(profile?.email ?? user.email ?? null);
       } catch {
         if (!cancelled) {
           setViewerRole(null);
           setViewerName(null);
+          setViewerEmail(null);
         }
       }
     })();
@@ -132,15 +135,19 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   const activeName = (viewerName ?? currentDesigner).trim();
+  const fallbackName =
+    (viewerEmail?.split("@")[0]?.trim() || (viewerRole ? viewerRole[0].toUpperCase() + viewerRole.slice(1) : "User"));
+  const commenterName = activeName || fallbackName;
+  const canComment = Boolean(viewerRole && commenterName);
   const isDesigner = viewerRole === "designer" && !!activeName && activeName === asset.designerName;
   const liveEng       = engagement.get(asset.id);
   const liked         = liveEng.liked_by_me;
   const updates       = asset.updates ?? [];
 
   function handlePost() {
-    if (!updateText.trim() || !activeName || !asset || !isDesigner) return;
+    if (!updateText.trim() || !asset || !canComment) return;
     setPosting(true);
-    addUpdate(asset.id, updateText, activeName);
+    addUpdate(asset.id, updateText, commenterName);
     setUpdateText("");
     setPosting(false);
     textareaRef.current?.focus();
@@ -322,13 +329,13 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
             )}
           </div>
 
-          {/* Designer tweet composer */}
-          {isDesigner && (
+          {/* Shared comment composer */}
+          {canComment && (
             <div className="rounded-xl border border-border/50 bg-card p-4">
               <div className="flex items-start gap-3 mb-3">
                 <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0">
                   <span className="text-xs font-bold text-primary">
-                    {activeName.charAt(0).toUpperCase()}
+                    {commenterName.charAt(0).toUpperCase()}
                   </span>
                 </div>
                 <textarea
@@ -338,7 +345,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handlePost();
                   }}
-                  placeholder="Share what's happening at the event…"
+                  placeholder="Add a comment..."
                   rows={3}
                   maxLength={280}
                   className="flex-1 bg-transparent text-sm text-foreground placeholder:text-foreground/25 resize-none focus:outline-none leading-relaxed"
@@ -362,7 +369,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                   )}
                 >
                   <Send className="w-3 h-3" />
-                  Post Update
+                  Post Comment
                 </button>
               </div>
             </div>
@@ -377,9 +384,9 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
               )}>
                 <Zap className="w-5 h-5 text-muted-foreground/30 mx-auto mb-2" />
                 <p className="text-sm text-muted-foreground/50">
-                  {isDesigner
-                    ? "No updates yet. Post from the scene above!"
-                    : "No live updates yet — check back soon."}
+                  {canComment
+                    ? "No comments yet. Start the conversation above."
+                    : "No comments yet — check back soon."}
                 </p>
               </div>
             ) : (
