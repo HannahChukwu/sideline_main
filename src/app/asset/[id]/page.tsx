@@ -161,23 +161,22 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8">
+      <main className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-[1fr_360px] gap-8">
 
         {/* ── Left: Poster + info ───────────────────────────────────── */}
         <div>
           {/* Poster image */}
-          <div className="relative rounded-2xl overflow-hidden border border-border/50 bg-muted mb-6">
-            <div className="relative aspect-[4/5] sm:aspect-[3/4] max-h-[640px]">
+          <div className="relative rounded-2xl overflow-hidden border border-border/50 bg-black/40 mb-6 p-2 sm:p-3">
+            <div className="relative w-full min-h-[420px] sm:min-h-[560px] lg:min-h-[680px]">
               <Image
                 src={asset.imageUrl}
                 alt={asset.title}
                 fill
-                className="object-cover"
-                sizes="(max-width: 1024px) 100vw, 560px"
+                className="object-contain"
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 65vw, 760px"
                 unoptimized
                 priority
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
 
               {/* Type badge */}
               <div className="absolute top-4 left-4">
@@ -273,7 +272,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
         </div>
 
         {/* ── Right: Live updates (tweets) ─────────────────────────── */}
-        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 md:sticky md:top-24 h-fit">
           {/* Header */}
           <div className="flex items-center justify-between">
             <div>
