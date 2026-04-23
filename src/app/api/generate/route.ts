@@ -160,20 +160,17 @@ export async function POST(req: NextRequest) {
 
   const rl = await consumeGenerateRateLimit(supabase);
   if (!rl.ok) {
-    if (rl.kind === "misconfigured") {
+    if (rl.kind === "rate_limited") {
       return NextResponse.json(
-        {
-          error:
-            "Generation rate limiting is not available. Apply the Postgres migration: run `supabase-migration-generation-rate-limit.sql` in the Supabase SQL Editor (or use a fresh `supabase-schema.sql`). Optional: set SKIP_GENERATE_RATE_LIMIT=1 only for trusted local tests.",
-          detail: rl.detail,
-        },
-        { status: 503 }
+        { error: "Generation limit reached. Try again later." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } }
       );
     }
-    return NextResponse.json(
-      { error: "Generation limit reached. Try again later." },
-      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } }
-    );
+    // Fail-open fallback: don't block generation when DB rate-limit migration
+    // is missing/misconfigured. This keeps production usable while admins
+    // apply SQL migrations.
+    // eslint-disable-next-line no-console
+    console.warn("Generate rate limit misconfigured; continuing without DB limits.", rl.detail);
   }
 
   const {
