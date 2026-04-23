@@ -69,6 +69,7 @@ function FeedAssetCard({
 }) {
   const { ref, visible } = useInView();
   const [popped, setPopped] = useState(false);
+  const commentCount = asset.updates?.length ?? 0;
 
   function handleLike() {
     void onLike(asset.id);
@@ -147,6 +148,13 @@ function FeedAssetCard({
               >
                 <Eye className="w-3 h-3" />
                 <span className="tabular-nums">{viewCount}</span>
+              </div>
+              <div
+                className="flex items-center gap-1 text-[11px] text-muted-foreground/70"
+                title={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}
+              >
+                <MessageSquare className="w-3 h-3" />
+                <span className="tabular-nums">{commentCount}</span>
               </div>
               <button
                 onClick={(e) => { e.preventDefault(); handleLike(); }}
@@ -515,6 +523,10 @@ export default function FanFeed() {
                         <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-xs font-semibold text-white/70">
                           <Eye className="w-3.5 h-3.5" />
                           {engagement.get(featured.id).view_count}
+                        </div>
+                        <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-xs font-semibold text-white/70">
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          {featured.updates?.length ?? 0}
                         </div>
                         {(featured.updates?.length ?? 0) > 0 && (
                           <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-500/15 border border-green-500/25 text-xs font-semibold text-green-400">

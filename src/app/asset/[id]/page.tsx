@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Heart, Eye, Send, Zap, Clock, CheckCircle, Trash2,
+  ArrowLeft, Heart, Eye, Send, Zap, Clock, CheckCircle, Trash2, MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
@@ -276,6 +276,13 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                 >
                   <Eye className="w-4 h-4" />
                   <span className="tabular-nums">{liveEng.view_count}</span>
+                </div>
+                <div
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-sm font-semibold text-muted-foreground"
+                  title={`${updates.length} comment${updates.length === 1 ? "" : "s"}`}
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span className="tabular-nums">{updates.length}</span>
                 </div>
                 {!isDesigner ? (
                   <button

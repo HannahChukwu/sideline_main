@@ -644,11 +644,10 @@ export default function CreateAsset() {
         const now = new Date().toISOString();
         const fallbackTitle = `${form.homeTeam || "Home"} vs ${form.awayTeam || "Away"}`;
         const normalizedEventDate = form.eventDate || now.slice(0, 10);
-        const { error: insErr } = await supabase.from("assets").insert({
+        const commonInsertFields = {
           designer_id: signedInUserId,
           school_id: teamRow?.school_id ?? null,
           team_id: resolvedTeamId,
-          schedule_id: genMatchId,
           title: generatedTitle || fallbackTitle,
           type: form.type,
           status,
@@ -662,7 +661,25 @@ export default function CreateAsset() {
           created_at: now,
           updated_at: now,
           published_at: status === "published" ? now : null,
+        };
+
+        const { error: insertWithScheduleError } = await supabase.from("assets").insert({
+          ...commonInsertFields,
+          schedule_id: genMatchId,
         });
+
+        let insErr = insertWithScheduleError;
+        const missingScheduleColumn =
+          !!insErr &&
+          ((typeof insErr.message === "string" && insErr.message.includes("schedule_id")) ||
+            // PostgREST schema cache errors use this code in some environments.
+            ("code" in insErr && insErr.code === "PGRST204"));
+        if (missingScheduleColumn) {
+          // Backward compatibility: some environments are missing `assets.schedule_id`.
+          const { error: retryError } = await supabase.from("assets").insert(commonInsertFields);
+          insErr = retryError;
+        }
+
         if (insErr) throw insErr;
       } catch (e) {
         const msg =

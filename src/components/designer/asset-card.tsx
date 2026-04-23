@@ -207,17 +207,21 @@ export function AssetCard({
               </div>
             )}
 
-            {/* Updates count */}
-            {updateCount > 0 && (
-              <Link
-                href={`/asset/${asset.id}`}
-                onClick={(e) => e.stopPropagation()}
-                className="flex items-center gap-1.5 text-xs text-green-400 hover:text-green-300 transition-colors"
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>{updateCount}</span>
-              </Link>
-            )}
+            {/* Comments count */}
+            <Link
+              href={`/asset/${asset.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "flex items-center gap-1.5 text-xs transition-colors",
+                updateCount > 0
+                  ? "text-green-400 hover:text-green-300"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              title={`${updateCount} comment${updateCount === 1 ? "" : "s"}`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span className="tabular-nums">{updateCount}</span>
+            </Link>
           </div>
 
           {/* Designer dashboard: actions */}
