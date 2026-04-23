@@ -120,9 +120,8 @@ export default function DesignerTeamPage() {
             <p className="text-xs text-muted-foreground uppercase tracking-widest mb-2">Designer</p>
             <h1 className="text-3xl font-bold text-foreground">Team</h1>
             <p className="text-sm text-muted-foreground mt-2 max-w-xl">
-              Add teams, connect each team&apos;s Instagram Business account from the expanded row, add rosters and
-              schedules. Athletes use invite links to join; the Generator uses this data for match picks and IG
-              publishing.
+              Manage team setup in one place. Use the sections below for different jobs: configure each team and roster,
+              create athlete invite links, and review imported schedules used by Generator match selection.
             </p>
           </div>
           <Link
@@ -133,14 +132,35 @@ export default function DesignerTeamPage() {
           </Link>
         </div>
 
-        {mounted && <DesignerProgramSetup onProgramUpdated={reloadSchoolTeams} />}
+        {mounted && (
+          <section className="mb-6 rounded-2xl border border-border/60 bg-card/60 p-3 sm:p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="inline-flex items-center rounded-md border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                Section 1
+              </span>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Team setup</p>
+            </div>
+            <DesignerProgramSetup onProgramUpdated={reloadSchoolTeams} />
+          </section>
+        )}
 
         {mounted && schoolTeams.length > 0 && (
-          <div className="rounded-xl border border-border/50 bg-card p-5 mb-6 space-y-4">
+          <section className="rounded-2xl border border-border/60 bg-card/60 p-3 sm:p-4 mb-6">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="inline-flex items-center rounded-md border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                Section 2
+              </span>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Athlete invites</p>
+            </div>
+            <div className="rounded-xl border border-border/50 bg-card p-5 space-y-4">
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4 text-primary shrink-0" />
-              <h2 className="text-sm font-semibold text-foreground">Your school teams</h2>
+              <h2 className="text-sm font-semibold text-foreground">Athlete invite links</h2>
             </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              This section only controls invite links. Team setup, player edits, schedule import, and Instagram
+              connection are managed in the team rows above.
+            </p>
             <ul className="text-sm text-foreground/90 space-y-1.5">
               {schoolTeams.map((t) => (
                 <li key={t.id}>
@@ -152,8 +172,8 @@ export default function DesignerTeamPage() {
             </ul>
             <div className="pt-3 border-t border-border/40 space-y-2">
               <p className="text-xs text-muted-foreground leading-relaxed">
-                <span className="font-semibold text-foreground/80">Athlete invite.</span> Creates a signed link (HMAC,
-                14-day expiry). Athletes sign in, open the link, and their account is linked to the selected team.
+                <span className="font-semibold text-foreground/80">What this does:</span> Creates a signed invite link
+                (14-day expiry). Athlete or student users sign in, open the link, and are linked to the selected team.
               </p>
               <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                 {schoolTeams.length > 1 && (
@@ -186,15 +206,23 @@ export default function DesignerTeamPage() {
               </div>
               {inviteMsg && <p className="text-xs text-muted-foreground leading-relaxed">{inviteMsg}</p>}
             </div>
-          </div>
+            </div>
+          </section>
         )}
 
         {mounted && scheduleTeam && (
-          <div className="rounded-xl border border-border/50 bg-card p-5 mb-6">
+          <section className="rounded-2xl border border-border/60 bg-card/60 p-3 sm:p-4 mb-6">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="inline-flex items-center rounded-md border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                Section 3
+              </span>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Schedule preview</p>
+            </div>
+            <div className="rounded-xl border border-border/50 bg-card p-5">
             <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-primary shrink-0" />
-                <h2 className="text-sm font-semibold text-foreground">Schedule preview</h2>
+                <h2 className="text-sm font-semibold text-foreground">Schedule preview (read-only)</h2>
               </div>
               <div className="flex items-center gap-2 sm:ml-auto">
                 {schoolTeams.length > 1 && (
@@ -211,7 +239,7 @@ export default function DesignerTeamPage() {
                   </select>
                 )}
                 <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  Import or replace under each team above
+                  Import or replace schedules inside each expanded team row
                 </span>
               </div>
             </div>
@@ -244,7 +272,8 @@ export default function DesignerTeamPage() {
                 </ul>
               </>
             )}
-          </div>
+            </div>
+          </section>
         )}
       </main>
     </div>

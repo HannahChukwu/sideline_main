@@ -198,17 +198,37 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
   }
 
   return (
-    <div className="rounded-xl border border-border/50 bg-card p-5 mb-6 space-y-5">
+    <div className="rounded-xl border border-border/50 bg-card p-5 space-y-5">
       <div className="flex items-start gap-3">
         <Users className="w-5 h-5 text-primary shrink-0 mt-0.5" />
         <div>
           <h2 className="text-sm font-semibold text-foreground">Teams, players & schedules</h2>
           <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-            Add each team once, connect its{" "}
-            <span className="text-foreground/80 font-medium">Instagram Business</span> account (expand the team), roster
-            players, then upload the season schedule (Excel or CSV). In{" "}
-            <span className="text-foreground/80 font-medium">Generator</span>, you&apos;ll pick the team, featured
-            athletes, and match from that schedule.
+            Use this section for setup only: add teams, open each team row, then manage Instagram, roster, and schedule.
+            Generator later uses this data for featured athletes and match selection.
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border/40 bg-background/30 p-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+          What each area does
+        </p>
+        <div className="grid gap-1.5 text-xs text-muted-foreground">
+          <p>
+            <span className="text-foreground/85 font-medium">1) Add team form:</span> creates the team record.
+          </p>
+          <p>
+            <span className="text-foreground/85 font-medium">2) Team row (expand):</span> manage Instagram + players +
+            schedule for that specific team.
+          </p>
+          <p>
+            <span className="text-foreground/85 font-medium">3) Athlete invite section (below):</span> generates join
+            links for athlete/student accounts.
+          </p>
+          <p>
+            <span className="text-foreground/85 font-medium">4) Schedule preview:</span> read-only list of imported
+            games.
           </p>
         </div>
       </div>
@@ -269,9 +289,7 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
           {addTeamBusy ? "Adding…" : "Add team"}
         </Button>
         <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
-          After the team appears below, expand it and use{" "}
-          <span className="text-foreground/70 font-medium">Connect Instagram</span> to link that program&apos;s IG page
-          (Facebook login with Page + Instagram Business).
+          Next step after creating a team: expand that team row and complete Instagram, players, and schedule.
         </p>
       </form>
 
@@ -306,7 +324,10 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
                 </button>
                 {open && (
                   <div className="px-3 pb-4 pt-2 border-t border-border/30 space-y-4">
-                    <div className="rounded-lg border border-pink-500/15 bg-gradient-to-r from-purple-500/5 to-pink-500/5 p-3 space-y-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Team setup for this row only
+                    </p>
+                    <div className="rounded-lg border border-pink-500/20 bg-gradient-to-r from-purple-500/5 to-pink-500/5 p-3 space-y-2">
                       <div className="flex items-center gap-2">
                         <InstagramGlyph className="w-4 h-4 text-pink-300 shrink-0" />
                         <p className="text-[11px] font-semibold text-foreground uppercase tracking-wider">
@@ -340,10 +361,15 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
                       )}
                     </div>
 
-                    <div>
-                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                        Players
-                      </p>
+                    <div className="rounded-lg border border-border/35 bg-background/35 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                          Players
+                        </p>
+                        <span className="text-[10px] text-muted-foreground">
+                          {athletes.length} rostered
+                        </span>
+                      </div>
                       {athletes.length === 0 ? (
                         <p className="text-xs text-muted-foreground mb-2">No players yet.</p>
                       ) : (
@@ -386,13 +412,16 @@ export function DesignerProgramSetup({ onProgramUpdated }: Props) {
                       {playerErr && <p className="text-xs text-destructive mt-2">{playerErr}</p>}
                     </div>
 
-                    <div>
+                    <div className="rounded-lg border border-border/35 bg-background/35 p-3">
                       <div className="flex items-center gap-2 mb-2">
                         <Calendar className="w-3.5 h-3.5 text-primary" />
                         <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                           Season schedule (replace)
                         </p>
                       </div>
+                      <p className="text-[10px] text-muted-foreground mb-2">
+                        Importing here replaces this team&apos;s current schedule.
+                      </p>
                       <ScheduleImporter onImport={(ev) => void handleScheduleImport(t.id, ev)} />
                     </div>
                   </div>
