@@ -94,8 +94,8 @@ export function Navbar({ role, userEmail }: NavbarProps) {
   }
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10">
-      <div className="glass px-5 py-3.5 flex items-center justify-between">
+    <header className="fixed top-0 left-0 right-0 z-50 border-b border-border/80 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 shadow-sm">
+      <div className="px-5 py-3.5 flex items-center justify-between">
         {/* Logo */}
         <Link href={links[0]?.href ?? "/"} className="group transition-opacity hover:opacity-80 shrink-0">
           <Logo size="sm" />

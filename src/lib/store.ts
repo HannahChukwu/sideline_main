@@ -146,28 +146,13 @@ export interface DesignerFolder {
   createdAt: string;
 }
 
-// Seed with existing mock assets
-const SEED: StoreAsset[] = MOCK_ASSETS.map((a) => ({
-  id: a.id,
-  title: a.title,
-  tagline: "",
-  type: a.type,
-  status: a.status,
-  sport: a.sport,
-  homeTeam: a.homeTeam,
-  awayTeam: a.awayTeam,
-  homeScore: a.homeScore,
-  awayScore: a.awayScore,
-  eventDate: a.eventDate,
-  imageUrl: a.imageUrl,
-  style: "illustrated",
-  format: "story",
-  likes: a.likes,
-  likedBy: [],
-  designerName: a.designerName,
-  createdAt: a.createdAt,
-  updates: [],
-}));
+const MOCK_SIGNATURES = new Set(
+  MOCK_ASSETS.map((a) => `${a.id}::${a.title}::${a.imageUrl}`)
+);
+
+function isSeededMockAsset(asset: Pick<StoreAsset, "id" | "title" | "imageUrl">): boolean {
+  return MOCK_SIGNATURES.has(`${asset.id}::${asset.title}::${asset.imageUrl}`);
+}
 
 const SEED_FOLDERS: DesignerFolder[] = [
   { id: "folder-gameday",  name: "Game Day",       color: "orange", assetIds: [], createdAt: new Date().toISOString() },
@@ -213,7 +198,8 @@ interface AppState {
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
-      assets: SEED,
+      // Start empty: all feed assets should come from real data, not seeded mocks.
+      assets: [],
       folders: SEED_FOLDERS,
       sessionId: uid(),
       currentDesigner: "",
@@ -349,6 +335,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: "sideline-v2",
+      version: 2,
       storage: createJSONStorage(() => ({
         getItem: (name: string) =>
           typeof window !== "undefined" ? localStorage.getItem(name) : null,
@@ -359,6 +346,16 @@ export const useAppStore = create<AppState>()(
           if (typeof window !== "undefined") localStorage.removeItem(name);
         },
       })),
+      migrate: (persistedState, version) => {
+        if (!persistedState || typeof persistedState !== "object") return persistedState;
+        if (version >= 2) return persistedState;
+        const state = persistedState as Partial<AppState>;
+        const existingAssets = Array.isArray(state.assets) ? state.assets : [];
+        return {
+          ...state,
+          assets: existingAssets.filter((asset) => !isSeededMockAsset(asset)),
+        };
+      },
       partialize: (s) => ({
         assets: s.assets,
         folders: s.folders,

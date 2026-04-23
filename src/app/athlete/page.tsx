@@ -4,18 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Heart, Trophy, Star, Images } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
-import { AssetCard } from "@/components/designer/asset-card";
-import { useAppStore } from "@/lib/store";
+import { AssetCard, type AssetCardModel } from "@/components/designer/asset-card";
 import { createClient } from "@/lib/supabase/client";
 import { fetchProfileTeamId } from "@/lib/supabase/profile";
 import { getTeamDisplayForViewer } from "@/lib/supabase/teams";
 import { useEngagement } from "@/lib/hooks/useEngagement";
+import { getPublishedAssets } from "@/lib/supabase/assets";
 
 export default function AthleteDashboard() {
   const [mounted, setMounted] = useState(false);
+  const [linkedTeamId, setLinkedTeamId] = useState<string | null>(null);
   const [linkedTeamLabel, setLinkedTeamLabel] = useState<string | null>(null);
-
-  const assets = useAppStore((s) => s.assets);
+  const [published, setPublished] = useState<AssetCardModel[]>([]);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -24,17 +24,57 @@ export default function AthleteDashboard() {
     const supabase = createClient();
     supabase.auth.getSession().then(({ data }) => {
       const uid = data.session?.user?.id;
-      if (!uid || cancelled) return;
+      if (!uid || cancelled) {
+        if (!cancelled) {
+          setLinkedTeamId(null);
+          setLinkedTeamLabel(null);
+          setPublished([]);
+        }
+        return;
+      }
       fetchProfileTeamId(supabase, uid)
         .then(async (teamId) => {
-          if (!teamId || cancelled) return;
+          if (cancelled) return;
+          setLinkedTeamId(teamId);
+          if (!teamId) {
+            setLinkedTeamLabel(null);
+            setPublished([]);
+            return;
+          }
           const row = await getTeamDisplayForViewer(supabase, teamId);
           if (cancelled || !row) return;
           const label = [row.schoolName, row.teamName].filter(Boolean).join(" · ") || row.teamName;
           setLinkedTeamLabel(label);
+
+          const list = await getPublishedAssets(supabase, { limit: 200 });
+          if (cancelled) return;
+          const teamPublished: AssetCardModel[] = list
+            .filter((a) => a.team_id === teamId)
+            .map((a) => ({
+              id: a.id,
+              title: a.title,
+              type: a.type,
+              status: a.status,
+              sport: a.sport,
+              homeTeam: a.home_team,
+              awayTeam: a.away_team,
+              homeScore: a.home_score ?? undefined,
+              awayScore: a.away_score ?? undefined,
+              eventDate: a.event_date,
+              imageUrl: a.image_url ?? "",
+              likes: a.like_count ?? 0,
+              designerName: a.designer_name ?? "Designer",
+              createdAt: a.created_at,
+              updates: [],
+            }));
+          setPublished(teamPublished);
         })
         .catch(() => {
-          if (!cancelled) setLinkedTeamLabel(null);
+          if (!cancelled) {
+            setLinkedTeamId(null);
+            setLinkedTeamLabel(null);
+            setPublished([]);
+          }
         });
     });
     return () => {
@@ -42,14 +82,10 @@ export default function AthleteDashboard() {
     };
   }, []);
 
-  const published = useMemo(
-    () => (mounted ? assets.filter((a) => a.status === "published") : []),
-    [mounted, assets]
-  );
-  const engagementKeys = useMemo(() => published.map((a) => a.id), [published]);
+  const engagementKeys = useMemo(() => (mounted ? published.map((a) => a.id) : []), [mounted, published]);
   const engagement     = useEngagement(engagementKeys);
 
-  const likedAssets   = mounted ? published.filter((a) => engagement.get(a.id).liked_by_me)  : [];
+  const likedAssets   = mounted ? published.filter((a) => engagement.get(a.id).liked_by_me) : [];
   const pendingAssets = mounted ? published.filter((a) => !engagement.get(a.id).liked_by_me) : [];
 
   return (
@@ -173,7 +209,9 @@ export default function AthleteDashboard() {
 
         {mounted && published.length === 0 && (
           <div className="py-24 text-center text-muted-foreground/50 text-sm">
-            No published assets yet — check back after your designer posts something.
+            {linkedTeamId
+              ? "No published assets yet for your team — check back after your designer posts something."
+              : "You are not linked to a team yet. Use your invite link first, then assets will appear here."}
           </div>
         )}
       </main>
