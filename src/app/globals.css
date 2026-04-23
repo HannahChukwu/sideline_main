@@ -254,6 +254,11 @@
   from { opacity: 0; transform: translateY(12px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
+@keyframes score-flash {
+  0%   { color: oklch(0.72 0.18 145); }
+  60%  { color: oklch(0.72 0.18 145); }
+  100% { color: inherit; }
+}
 
 .animate-fade-up        { animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 .animate-ticker         { animation: ticker 28s linear infinite; }
@@ -264,9 +269,10 @@
 .animate-tweet-pop      { animation: tweet-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 .animate-heart-pop      { animation: heart-pop 0.35s ease-out forwards; }
 .animate-new-badge      { animation: new-badge-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-.animate-swim-left      { animation: swim-left var(--swim-dur, 40s) linear infinite; }
+.animate-swim-left       { animation: swim-left var(--swim-dur, 40s) linear infinite; }
 .animate-swim-left:hover { animation-play-state: paused; }
-.animate-card-enter     { animation: card-enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.animate-card-enter      { animation: card-enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.animate-score-flash     { animation: score-flash 1.2s ease-out forwards; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 

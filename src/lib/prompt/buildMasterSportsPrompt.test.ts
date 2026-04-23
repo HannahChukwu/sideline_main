@@ -26,24 +26,24 @@ describe("buildMasterSportsPrompt", () => {
     expect(prompt).toContain("Subtext: Falcons vs Eagles");
     expect(prompt).toContain("Date & Time: 2026-11-12 | 7:00 PM");
     expect(prompt).toContain("Venue: Main Arena");
-    expect(prompt).toContain("Additional creative direction from designer: add arena smoke.");
-    expect(prompt).toContain("Apply these user refinements exactly");
-    expect(prompt).toContain("Do not distort the athlete");
+    expect(prompt).toContain("Additional creative direction from the designer: add arena smoke.");
+    expect(prompt).toContain("Apply these designer refinements exactly");
+    expect(prompt).toContain("do not distort the athlete");
   });
 
-  it("uses preset defaults when optional fields are empty", () => {
+  it("injects brand style preset into Visual Style field", () => {
     const prompt = buildMasterSportsPrompt({
       type: "highlight",
       sport: "Football",
       homeTeam: "Knights",
       awayTeam: "Bears",
-      preset: "hype",
+      preset: "nike",
       format: "story",
     });
 
-    expect(prompt).toContain("Mood/Energy: maximum hype, explosive game-day energy, fast and intense");
-    expect(prompt).toContain("Composition Focus: action pose");
-    expect(prompt).toContain("Optional style modifier to blend in: ESPN / Nike campaign style.");
+    expect(prompt).toContain("ESPN / Nike campaign style");
+    expect(prompt).toContain("explosive iconic game-day energy");
+    expect(prompt).toContain("Composition Focus: full body power stance or dynamic action pose");
     expect(prompt).toContain("professional, Instagram-ready layout (9:16 ratio)");
   });
 
@@ -53,15 +53,43 @@ describe("buildMasterSportsPrompt", () => {
       sport: "Squash",
       homeTeam: "Trinity",
       awayTeam: "Harvard",
-      preset: "prestige",
+      preset: "new_balance",
       referenceImageCount: 2,
       strictPhotoLock: true,
     });
 
     expect(prompt).toContain("CRITICAL PHOTO PRESERVATION RULES");
-    expect(prompt).toContain("Use image 2 as the primary base photo");
+    expect(prompt).toContain("Use image 2 as the primary base");
     expect(prompt).toContain("STRICT ATHLETE LOCK");
     expect(prompt).toContain("design-over-photo task");
-    expect(prompt).toContain("Prioritize photorealism and editorial sports design quality.");
+    expect(prompt).toContain("Realism bias");
+  });
+
+  it("appends manual visualStyle to brand style when both are set", () => {
+    const prompt = buildMasterSportsPrompt({
+      type: "poster",
+      sport: "Soccer",
+      homeTeam: "Lions",
+      awayTeam: "Tigers",
+      preset: "jordan",
+      visualStyle: "retro poster overlay",
+    });
+
+    expect(prompt).toContain("Jordan Brand prestige");
+    expect(prompt).toContain("retro poster overlay");
+  });
+
+  it("uses ESPN preset brand style", () => {
+    const prompt = buildMasterSportsPrompt({
+      type: "final-score",
+      sport: "Basketball",
+      homeTeam: "Blue Devils",
+      awayTeam: "Tar Heels",
+      preset: "espn",
+    });
+
+    expect(prompt).toContain("ESPN broadcast championship graphic");
+    expect(prompt).toContain("Headline: FINAL");
+    expect(prompt).toContain("Realism bias");
   });
 });

@@ -211,7 +211,6 @@ export async function POST(req: NextRequest) {
     customPrompt,
     preset: preset as GenerationPreset,
     refinements,
-    styleModifier: presetConfig.styleModifier,
     referenceImageCount: sanitizedRefs.length,
     strictPhotoLock,
   });

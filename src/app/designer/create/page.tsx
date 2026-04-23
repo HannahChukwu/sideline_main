@@ -468,19 +468,10 @@ export default function CreateAsset() {
     setForm((f) => ({
       ...f,
       preset,
-      mood: selected.moodEnergy || f.mood,
-      lighting: selected.lighting || f.lighting,
-      composition: selected.compositionFocus || f.composition,
-      style:
-        preset === "hype"
-          ? "bold"
-          : preset === "result"
-          ? "minimal"
-          : preset === "prestige"
-          ? "minimal"
-          : preset === "commitment"
-          ? "cinematic"
-          : f.style,
+      mood:        selected.moodEnergy       || f.mood,
+      lighting:    selected.lighting          || f.lighting,
+      composition: selected.compositionFocus  || f.composition,
+      style:       preset === "custom" ? f.style : selected.visualStyleKey,
     }));
   }
 
@@ -1146,37 +1137,80 @@ export default function CreateAsset() {
             )}
 
             {step !== "result" && (
-              <div className="rounded-xl border border-border/50 bg-card/40 p-4 space-y-3">
+              <div className="rounded-xl border border-border bg-card/40 p-4 space-y-4">
                 <div>
                   <p className="text-xs font-semibold text-foreground uppercase tracking-wider">
-                    Presets
+                    Brand Style Preset
                   </p>
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    Choose a starting mode for consistent results. You can still fine-tune all fields below.
+                  <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                    Select a visual identity to drive the AI prompt. Each preset injects a brand-specific style direction into the generation. You can still fine-tune fields below.
                   </p>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {GENERATION_PRESETS.map((preset) => {
-                    const active = form.preset === preset.value;
+
+                {/* Brand preset grid — 2 cols on mobile, 3 on larger screens */}
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                  {GENERATION_PRESETS.map((p) => {
+                    const active = form.preset === p.value;
                     return (
                       <button
-                        key={preset.value}
+                        key={p.value}
                         type="button"
-                        onClick={() => applyPreset(preset.value)}
-                        className={`text-left rounded-xl border p-3 transition-all ${
+                        onClick={() => applyPreset(p.value)}
+                        className={`group relative text-left rounded-xl border p-3 transition-all duration-150 ${
                           active
-                            ? "border-primary/40 bg-primary/10 text-primary"
-                            : "border-border/50 bg-card text-muted-foreground hover:border-border hover:text-foreground"
+                            ? "border-primary/45 bg-primary/10 ring-1 ring-primary/20"
+                            : "border-border/60 bg-card hover:border-border hover:bg-white/[0.04]"
                         }`}
                       >
-                        <div className="text-sm font-semibold">{preset.label}</div>
-                        <div className={`text-xs mt-1 ${active ? "text-primary/75" : "text-muted-foreground/70"}`}>
-                          {preset.description}
+                        {/* Active check */}
+                        {active && (
+                          <span className="absolute top-2.5 right-2.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary">
+                            <Check className="w-2.5 h-2.5 text-white" />
+                          </span>
+                        )}
+
+                        {/* Brand badge */}
+                        <span className={`inline-block mb-2 text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded ${
+                          active
+                            ? "bg-primary/20 text-primary"
+                            : "bg-white/8 text-foreground/40"
+                        }`}>
+                          {p.badge}
+                        </span>
+
+                        {/* Brand name */}
+                        <div className={`text-sm font-bold leading-tight ${
+                          active ? "text-primary" : "text-foreground"
+                        }`}>
+                          {p.label}
+                        </div>
+
+                        {/* Style description */}
+                        <div className={`text-[11px] mt-1 leading-snug line-clamp-2 ${
+                          active ? "text-primary/70" : "text-muted-foreground"
+                        }`}>
+                          {p.description}
                         </div>
                       </button>
                     );
                   })}
                 </div>
+
+                {/* Active preset style preview strip */}
+                {form.preset !== "custom" && (() => {
+                  const active = GENERATION_PRESETS.find((p) => p.value === form.preset);
+                  if (!active) return null;
+                  return (
+                    <div className="rounded-lg bg-primary/5 border border-primary/15 px-3 py-2.5 space-y-1">
+                      <p className="text-[10px] font-bold text-primary uppercase tracking-wider">
+                        Style injected into prompt
+                      </p>
+                      <p className="text-[11px] text-foreground/70 leading-relaxed line-clamp-3">
+                        {active.brandStyle}
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
