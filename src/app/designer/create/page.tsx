@@ -612,11 +612,12 @@ export default function CreateAsset() {
     setSaveError(null);
     setSaveState("saving");
     let imageUrl = generatedImage;
+    let signedInUserId: string | null = null;
     try {
       const { data: userData } = await supabase.auth.getUser();
-      const uid = userData.user?.id;
-      if (uid) {
-        imageUrl = await uploadGeneratedPosterFromUrl(supabase, uid, generatedImage);
+      signedInUserId = userData.user?.id ?? null;
+      if (signedInUserId) {
+        imageUrl = await uploadGeneratedPosterFromUrl(supabase, signedInUserId, generatedImage);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Could not archive poster image.";
@@ -624,6 +625,39 @@ export default function CreateAsset() {
       setSaveState(null);
       return;
     }
+
+    if (signedInUserId) {
+      try {
+        const now = new Date().toISOString();
+        const fallbackTitle = `${form.homeTeam || "Home"} vs ${form.awayTeam || "Away"}`;
+        const normalizedEventDate = form.eventDate || now.slice(0, 10);
+        const { error: insErr } = await supabase.from("assets").insert({
+          designer_id: signedInUserId,
+          team_id: genTeamId,
+          schedule_id: genMatchId,
+          title: generatedTitle || fallbackTitle,
+          type: form.type,
+          status,
+          sport: form.sport,
+          home_team: form.homeTeam || "Home",
+          away_team: form.awayTeam || "Away",
+          home_score: form.homeScore ? Number(form.homeScore) : null,
+          away_score: form.awayScore ? Number(form.awayScore) : null,
+          event_date: normalizedEventDate,
+          image_url: imageUrl,
+          created_at: now,
+          updated_at: now,
+          published_at: status === "published" ? now : null,
+        });
+        if (insErr) throw insErr;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Could not save asset to shared team feed.";
+        setSaveError(msg);
+        setSaveState(null);
+        return;
+      }
+    }
+
     addAsset({
       title: generatedTitle || `${form.homeTeam} vs ${form.awayTeam}`,
       tagline: generatedTagline || "",

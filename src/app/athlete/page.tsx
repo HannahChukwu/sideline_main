@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Heart, Trophy, Star, Images } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { AssetCard, type AssetCardModel } from "@/components/designer/asset-card";
+import { useAppStore } from "@/lib/store";
 import { createClient } from "@/lib/supabase/client";
 import { fetchProfileTeamId } from "@/lib/supabase/profile";
 import { getTeamDisplayForViewer } from "@/lib/supabase/teams";
@@ -15,7 +16,8 @@ export default function AthleteDashboard() {
   const [mounted, setMounted] = useState(false);
   const [linkedTeamId, setLinkedTeamId] = useState<string | null>(null);
   const [linkedTeamLabel, setLinkedTeamLabel] = useState<string | null>(null);
-  const [published, setPublished] = useState<AssetCardModel[]>([]);
+  const [teamPublished, setTeamPublished] = useState<AssetCardModel[]>([]);
+  const localAssets = useAppStore((s) => s.assets);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -38,7 +40,7 @@ export default function AthleteDashboard() {
           setLinkedTeamId(teamId);
           if (!teamId) {
             setLinkedTeamLabel(null);
-            setPublished([]);
+            setTeamPublished([]);
             return;
           }
           const row = await getTeamDisplayForViewer(supabase, teamId);
@@ -48,7 +50,7 @@ export default function AthleteDashboard() {
 
           const list = await getPublishedAssets(supabase, { limit: 200 });
           if (cancelled) return;
-          const teamPublished: AssetCardModel[] = list
+          const nextTeamPublished: AssetCardModel[] = list
             .filter((a) => a.team_id === teamId)
             .map((a) => ({
               id: a.id,
@@ -67,13 +69,13 @@ export default function AthleteDashboard() {
               createdAt: a.created_at,
               updates: [],
             }));
-          setPublished(teamPublished);
+          setTeamPublished(nextTeamPublished);
         })
         .catch(() => {
           if (!cancelled) {
             setLinkedTeamId(null);
             setLinkedTeamLabel(null);
-            setPublished([]);
+            setTeamPublished([]);
           }
         });
     });
@@ -81,6 +83,39 @@ export default function AthleteDashboard() {
       cancelled = true;
     };
   }, []);
+
+  const localPublished = useMemo(
+    () =>
+      mounted
+        ? localAssets
+            .filter((a) => a.status === "published")
+            .map((a) => ({
+              id: a.id,
+              title: a.title,
+              type: a.type,
+              status: a.status,
+              sport: a.sport,
+              homeTeam: a.homeTeam,
+              awayTeam: a.awayTeam,
+              homeScore: a.homeScore ?? undefined,
+              awayScore: a.awayScore ?? undefined,
+              eventDate: a.eventDate,
+              imageUrl: a.imageUrl,
+              likes: a.likes,
+              designerName: a.designerName,
+              createdAt: a.createdAt,
+              updates: a.updates ?? [],
+            }))
+        : [],
+    [mounted, localAssets]
+  );
+
+  // Prefer shared team assets from Supabase; fallback to local non-mock assets
+  // so recently generated posts remain visible during migration.
+  const published = useMemo(
+    () => (teamPublished.length > 0 ? teamPublished : localPublished),
+    [teamPublished, localPublished]
+  );
 
   const engagementKeys = useMemo(() => (mounted ? published.map((a) => a.id) : []), [mounted, published]);
   const engagement     = useEngagement(engagementKeys);
