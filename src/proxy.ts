@@ -107,10 +107,12 @@ export async function proxy(request: NextRequest) {
       .single();
 
     if (profile?.role) {
+      const isGlobalSettingsPath = pathname === "/settings";
       const onWrongPortal =
-        (profile.role === "designer" && !pathname.startsWith("/designer")) ||
-        (profile.role === "athlete" && !pathname.startsWith("/athlete")) ||
-        (profile.role === "student" && !pathname.startsWith("/feed"));
+        !isGlobalSettingsPath &&
+        ((profile.role === "designer" && !pathname.startsWith("/designer")) ||
+          (profile.role === "athlete" && !pathname.startsWith("/athlete")) ||
+          (profile.role === "student" && !pathname.startsWith("/feed")));
 
       if (onWrongPortal) {
         const url = request.nextUrl.clone();

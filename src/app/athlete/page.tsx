@@ -30,7 +30,7 @@ export default function AthleteDashboard() {
         if (!cancelled) {
           setLinkedTeamId(null);
           setLinkedTeamLabel(null);
-          setPublished([]);
+          setTeamPublished([]);
         }
         return;
       }

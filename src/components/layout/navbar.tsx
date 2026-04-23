@@ -49,6 +49,14 @@ export function Navbar({ role, userEmail }: NavbarProps) {
       : resolvedRole === "student"
       ? studentLinks
       : [];
+  const settingsHref =
+    resolvedRole === "designer"
+      ? "/designer/settings"
+      : resolvedRole === "athlete"
+      ? "/athlete/settings"
+      : resolvedRole === "student"
+      ? "/feed/settings"
+      : "/settings";
 
   useEffect(() => {
     let cancelled = false;
@@ -151,12 +159,12 @@ export function Navbar({ role, userEmail }: NavbarProps) {
 
           {hasUser && (
             <Link
-              href="/settings"
-              title="Profile"
+              href={settingsHref}
+              title="Settings"
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-white/6 transition-all"
             >
               <Settings className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Profile</span>
+              <span className="hidden sm:inline">Settings</span>
             </Link>
           )}
 
