@@ -628,12 +628,26 @@ export default function CreateAsset() {
 
     if (signedInUserId) {
       try {
+        const resolvedTeamId = genTeamId ?? schoolTeams[0]?.id ?? null;
+        if (!resolvedTeamId) {
+          setSaveError("Pick a team before saving so the asset can be added to the shared team feed.");
+          setSaveState(null);
+          return;
+        }
+
+        const { data: teamRow } = await supabase
+          .from("teams")
+          .select("id, school_id")
+          .eq("id", resolvedTeamId)
+          .maybeSingle();
+
         const now = new Date().toISOString();
         const fallbackTitle = `${form.homeTeam || "Home"} vs ${form.awayTeam || "Away"}`;
         const normalizedEventDate = form.eventDate || now.slice(0, 10);
         const { error: insErr } = await supabase.from("assets").insert({
           designer_id: signedInUserId,
-          team_id: genTeamId,
+          school_id: teamRow?.school_id ?? null,
+          team_id: resolvedTeamId,
           schedule_id: genMatchId,
           title: generatedTitle || fallbackTitle,
           type: form.type,
@@ -651,7 +665,12 @@ export default function CreateAsset() {
         });
         if (insErr) throw insErr;
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Could not save asset to shared team feed.";
+        const msg =
+          e instanceof Error
+            ? e.message
+            : typeof e === "object" && e && "message" in e && typeof e.message === "string"
+            ? e.message
+            : "Could not save asset to shared team feed.";
         setSaveError(msg);
         setSaveState(null);
         return;
