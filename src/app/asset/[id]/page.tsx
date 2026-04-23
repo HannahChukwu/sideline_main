@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { useEngagement } from "@/lib/hooks/useEngagement";
 import { createClient } from "@/lib/supabase/client";
 import { recordAssetView } from "@/lib/supabase/engagement";
+import type { Role } from "@/lib/types";
 
 const typeColors: Record<string, string> = {
   "gameday":     "bg-orange-500/10 text-orange-400 border-orange-500/20",
@@ -46,6 +47,8 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
   const [updateText, setUpdateText] = useState("");
   const [posting, setPosting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [viewerRole, setViewerRole] = useState<Role | null>(null);
+  const [viewerName, setViewerName] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const assets          = useAppStore((s) => s.assets);
@@ -54,6 +57,35 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
   const deleteAsset     = useAppStore((s) => s.deleteAsset);
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    (async () => {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const user = authData.user;
+        if (!user || cancelled) return;
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role, full_name")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (cancelled) return;
+        const role = profile?.role;
+        setViewerRole(role === "designer" || role === "athlete" || role === "student" ? role : null);
+        setViewerName(profile?.full_name ?? null);
+      } catch {
+        if (!cancelled) {
+          setViewerRole(null);
+          setViewerName(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Live shared likes/views (keyed by asset id) across all profiles.
   const engagementKeys = useMemo(() => [id], [id]);
@@ -99,15 +131,16 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
     );
   }
 
-  const isDesigner    = !!currentDesigner && currentDesigner === asset.designerName;
+  const activeName = (viewerName ?? currentDesigner).trim();
+  const isDesigner = viewerRole === "designer" && !!activeName && activeName === asset.designerName;
   const liveEng       = engagement.get(asset.id);
   const liked         = liveEng.liked_by_me;
   const updates       = asset.updates ?? [];
 
   function handlePost() {
-    if (!updateText.trim() || !currentDesigner || !asset) return;
+    if (!updateText.trim() || !activeName || !asset || !isDesigner) return;
     setPosting(true);
-    addUpdate(asset.id, updateText, currentDesigner);
+    addUpdate(asset.id, updateText, activeName);
     setUpdateText("");
     setPosting(false);
     textareaRef.current?.focus();
@@ -295,7 +328,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
               <div className="flex items-start gap-3 mb-3">
                 <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0">
                   <span className="text-xs font-bold text-primary">
-                    {currentDesigner.charAt(0).toUpperCase()}
+                    {activeName.charAt(0).toUpperCase()}
                   </span>
                 </div>
                 <textarea
