@@ -76,7 +76,7 @@ export function AssetCard({
   const displayedLikes = likeCount ?? asset.likes ?? 0;
 
   return (
-    <div className="group relative rounded-xl overflow-hidden border border-border/50 bg-card transition-all duration-300 hover:border-border hover:shadow-2xl hover:shadow-black/50 hover:-translate-y-0.5">
+    <div className="group relative rounded-xl overflow-hidden border border-border bg-card transition-all duration-300 hover:border-white/20 hover:shadow-2xl hover:shadow-black/60 hover:-translate-y-0.5">
 
       {/* Delete confirmation overlay */}
       {confirmDelete && (
@@ -178,18 +178,18 @@ export function AssetCard({
           </h3>
         </Link>
 
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
           <span className="text-xs text-muted-foreground">{asset.sport}</span>
-          <span className="text-muted-foreground/30">·</span>
+          <span className="text-foreground/20">·</span>
           <span className="text-xs text-muted-foreground">
             {new Date(asset.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
           </span>
-          <span className="text-muted-foreground/30">·</span>
+          <span className="text-foreground/20">·</span>
           <span className="text-xs text-muted-foreground">by {asset.designerName}</span>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between pt-3 border-t border-border/50">
+        <div className="flex items-center justify-between pt-3 border-t border-border">
           <div className="flex items-center gap-3">
             {/* Like button */}
             <button

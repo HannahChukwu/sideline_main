@@ -94,15 +94,15 @@ export function Navbar({ role, userEmail }: NavbarProps) {
   }
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 border-b border-border/50">
-      <div className="glass px-6 py-4 flex items-center justify-between">
+    <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10">
+      <div className="glass px-5 py-3.5 flex items-center justify-between">
         {/* Logo */}
-        <Link href={links[0]?.href ?? "/"} className="group transition-opacity hover:opacity-80">
+        <Link href={links[0]?.href ?? "/"} className="group transition-opacity hover:opacity-80 shrink-0">
           <Logo size="sm" />
         </Link>
 
         {/* Nav links */}
-        <nav className="flex items-center gap-1">
+        <nav className="flex items-center gap-0.5">
           {links.map((link) => {
             const active =
               link.href === "/designer/create"
@@ -113,8 +113,10 @@ export function Navbar({ role, userEmail }: NavbarProps) {
                 key={link.href}
                 href={link.href}
                 className={cn(
-                  "px-4 py-1.5 rounded-md text-sm font-bold tracking-tight transition-all",
-                  active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                  "px-3.5 py-1.5 rounded-lg text-sm font-semibold tracking-tight transition-all",
+                  active
+                    ? "bg-primary/12 text-primary ring-1 ring-primary/20"
+                    : "text-muted-foreground hover:text-foreground hover:bg-white/6"
                 )}
               >
                 {link.label}
@@ -124,17 +126,17 @@ export function Navbar({ role, userEmail }: NavbarProps) {
         </nav>
 
         {/* Right side: role badge + user + sign out */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 shrink-0">
           {resolvedRole && (
             <div
               className={cn(
-                "px-3 py-1 rounded-full text-xs font-semibold tracking-wider uppercase border",
+                "px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wider uppercase border",
                 resolvedRole === "designer" &&
                   "border-primary/30 text-primary bg-primary/10",
                 resolvedRole === "athlete" &&
                   "border-violet-500/30 text-violet-400 bg-violet-500/10",
                 resolvedRole === "student" &&
-                  "border-white/20 text-white/60 bg-white/5"
+                  "border-white/18 text-foreground/55 bg-white/5"
               )}
             >
               {ROLE_LABELS[resolvedRole]}
@@ -151,7 +153,7 @@ export function Navbar({ role, userEmail }: NavbarProps) {
             <Link
               href="/settings"
               title="Profile"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-white/6 transition-all"
             >
               <Settings className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Profile</span>
@@ -162,7 +164,7 @@ export function Navbar({ role, userEmail }: NavbarProps) {
             <button
               onClick={handleSignOut}
               title="Sign out"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-white/6 transition-all"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Sign out</span>
