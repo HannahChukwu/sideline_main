@@ -69,15 +69,9 @@ interface FormState {
   eventDate: string;
   venue: string;
   gameTime: string;
-  broadcastOrStreaming: string;
-  hashtag: string;
   customPrompt: string;
   style: string;
   format: string;
-  colorPalette: string;
-  composition: string;
-  lighting: string;
-  mood: string;
 }
 
 interface ChatMessage {
@@ -85,57 +79,10 @@ interface ChatMessage {
   content: string;
 }
 
-const STYLES = [
-  { value: "illustrated", label: "Illustrated", description: "Painted poster collage" },
-  { value: "bold", label: "Bold", description: "High contrast, explosive" },
-  { value: "cinematic", label: "Cinematic", description: "Epic movie-poster" },
-  { value: "retro", label: "Retro", description: "Vintage 70s–80s style" },
-  { value: "minimal", label: "Minimal", description: "Clean & understated" },
-];
-
 const FORMATS = [
   { value: "story", label: "Story", description: "9:16 · Instagram / TikTok" },
   { value: "post", label: "Post", description: "1:1 · Instagram / X" },
   { value: "banner", label: "Banner", description: "16:9 · Twitter / Web" },
-];
-
-const COLOR_PALETTES = [
-  { value: "", label: "Auto", description: "AI picks from team", colors: [] as string[] },
-  { value: "red and white", label: "Red & White", description: "", colors: ["#CC0000", "#FFFFFF"] },
-  { value: "blue and gold", label: "Blue & Gold", description: "", colors: ["#003DA5", "#FFB612"] },
-  { value: "black and orange", label: "Black & Orange", description: "", colors: ["#111111", "#FF6900"] },
-  { value: "green and white", label: "Green & White", description: "", colors: ["#006400", "#FFFFFF"] },
-  { value: "purple and gold", label: "Purple & Gold", description: "", colors: ["#4B0082", "#FFD700"] },
-  { value: "navy and silver", label: "Navy & Silver", description: "", colors: ["#001F5B", "#C0C0C0"] },
-  { value: "maroon and gold", label: "Maroon & Gold", description: "", colors: ["#800000", "#FFD700"] },
-  { value: "black and red", label: "Black & Red", description: "", colors: ["#111111", "#CC0000"] },
-];
-
-const COMPOSITION_OPTIONS = [
-  { value: "", label: "Auto", description: "AI decides" },
-  { value: "single hero athlete in foreground, massive close-up shot dominating the frame", label: "Hero Athlete", description: "One player, close up" },
-  { value: "full team group together, team huddle or celebration with all players visible", label: "Team Group", description: "Full squad shown" },
-  { value: "ball or sport equipment as central visual hero, athlete in background", label: "Equipment Focus", description: "Ball / gear hero" },
-  { value: "wide stadium establishing shot, crowd filling the stands, venue as the star", label: "Venue / Crowd", description: "Stadium atmosphere" },
-  { value: "split composition with both teams facing each other from opposite sides of center", label: "Matchup Split", description: "Both teams vs." },
-];
-
-const LIGHTING_OPTIONS = [
-  { value: "", label: "Auto", description: "AI decides" },
-  { value: "dramatic dark underlighting with deep shadows and high contrast chiaroscuro", label: "Dramatic Dark", description: "Dark & moody" },
-  { value: "bright stadium floodlights, high key lighting, vivid and energetic", label: "Stadium Lights", description: "Bright & vivid" },
-  { value: "golden hour warm sunset, long shadows, amber and orange glow", label: "Golden Hour", description: "Warm & cinematic" },
-  { value: "night game, electric blue-black sky, neon stadium lights, cool tones", label: "Night Game", description: "Night atmosphere" },
-  { value: "crisp daytime natural sunlight, clean open bright light", label: "Daytime Sun", description: "Clean & natural" },
-];
-
-const MOOD_OPTIONS = [
-  { value: "", label: "Auto", description: "Matches asset type" },
-  { value: "maximum hype, explosive energy, electric game-day intensity", label: "Hype / Intense", description: "Max energy" },
-  { value: "triumphant victory celebration, pure joy and euphoria, fists raised", label: "Celebratory", description: "Victory energy" },
-  { value: "epic cinematic gravitas, historic and legendary, larger than life", label: "Epic / Dramatic", description: "Grand scale" },
-  { value: "motivational, determined, locked in focus, warrior ready, coiled energy", label: "Motivational", description: "Focused & driven" },
-  { value: "clean, professional, confident and polished, brand-level restraint", label: "Professional", description: "Clean & sharp" },
 ];
 
 const FORMAT_ASPECT: Record<string, string> = {
@@ -165,15 +112,9 @@ export default function CreateAsset() {
     eventDate: "",
     venue: "",
     gameTime: "",
-    broadcastOrStreaming: "",
-    hashtag: "",
     customPrompt: "",
     style: "illustrated",
     format: "story",
-    colorPalette: "",
-    composition: "",
-    lighting: "",
-    mood: "",
   });
   /** Order: style reference, athlete, home logo, away logo — matches API image_input order (image 1–4). */
   const [refStyleFile, setRefStyleFile] = useState<File | null>(null);
@@ -468,9 +409,6 @@ export default function CreateAsset() {
     setForm((f) => ({
       ...f,
       preset,
-      mood:        selected.moodEnergy       || f.mood,
-      lighting:    selected.lighting          || f.lighting,
-      composition: selected.compositionFocus  || f.composition,
       style:       preset === "custom" ? f.style : selected.visualStyleKey,
     }));
   }
@@ -591,16 +529,10 @@ export default function CreateAsset() {
           eventDate: form.eventDate || undefined,
           venue: form.venue.trim() || undefined,
           gameTime: form.gameTime.trim() || undefined,
-          broadcastOrStreaming: form.broadcastOrStreaming.trim() || undefined,
-          hashtag: form.hashtag.trim() || undefined,
           style: form.style,
           preset: form.preset,
           format: form.format,
           customPrompt: form.customPrompt || undefined,
-          colorPalette: form.colorPalette || undefined,
-          composition: form.composition || undefined,
-          lighting: form.lighting || undefined,
-          mood: form.mood || undefined,
           strictPhotoLock,
           refinements: refinements.length > 0 ? refinements : undefined,
           referenceImageUrls: referenceImageUrls.length > 0 ? referenceImageUrls : undefined,
@@ -782,17 +714,6 @@ export default function CreateAsset() {
       setIgPublishing(false);
     }
   }
-
-  /* ─── Shared picker style helpers ──────────────────────────────────── */
-  const pill = (active: boolean) =>
-    `flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm font-medium transition-all text-left ${
-      active
-        ? "border-primary/40 bg-primary/10 text-primary"
-        : "border-border/50 bg-card text-muted-foreground hover:border-border hover:text-foreground"
-    }`;
-
-  const pillDesc = (active: boolean) =>
-    `text-xs font-normal ${active ? "text-primary/70" : "text-muted-foreground/50"}`;
 
   return (
     <div className="min-h-screen bg-background">
@@ -1143,7 +1064,7 @@ export default function CreateAsset() {
                     Brand Style Preset
                   </p>
                   <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                    Select a visual identity to drive the AI prompt. Each preset injects a brand-specific style direction into the generation. You can still fine-tune fields below.
+                    Select a visual identity to drive the AI prompt. Presets control style, composition, lighting, and mood.
                   </p>
                 </div>
 
@@ -1347,7 +1268,7 @@ export default function CreateAsset() {
                     Optional Context
                   </span>
                   <span className="ml-2 text-xs text-muted-foreground/60">
-                    (type, sport, teams, style, lighting…)
+                    (type, sport, teams, scores, date/time…)
                   </span>
                 </div>
                 {showOptional
@@ -1474,109 +1395,6 @@ export default function CreateAsset() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Broadcast / stream</label>
-                      <input
-                        type="text"
-                        value={form.broadcastOrStreaming}
-                        onChange={(e) => set("broadcastOrStreaming", e.target.value)}
-                        placeholder="e.g. ESPN+ / Big Ten Network"
-                        className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Hashtag</label>
-                      <input
-                        type="text"
-                        value={form.hashtag}
-                        onChange={(e) => set("hashtag", e.target.value)}
-                        placeholder="e.g. #GoBlue"
-                        className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/50 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Team Colors */}
-                  <div>
-                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Team Colors</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {COLOR_PALETTES.map((p) => (
-                        <button key={p.value} onClick={() => set("colorPalette", p.value)}
-                          className={`p-2.5 rounded-xl border text-xs font-medium text-left transition-all ${
-                            form.colorPalette === p.value
-                              ? "border-primary/40 bg-primary/10 text-primary"
-                              : "border-border/50 bg-card text-muted-foreground hover:border-border hover:text-foreground"
-                          }`}
-                        >
-                          {p.colors.length > 0 ? (
-                            <div className="flex gap-1 mb-1.5">
-                              {p.colors.map((c) => (
-                                <div key={c} className="w-4 h-4 rounded-sm border border-white/10 flex-shrink-0" style={{ backgroundColor: c }} />
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="w-4 h-4 rounded-sm border border-dashed border-current opacity-40 mb-1.5" />
-                          )}
-                          <span className="block font-medium leading-tight">{p.label}</span>
-                          {p.description && <span className="block text-xs font-normal opacity-50 mt-0.5">{p.description}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Visual Style */}
-                  <div>
-                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Visual Style</label>
-                    <div className="grid grid-cols-1 gap-2">
-                      {STYLES.map((s) => (
-                        <button key={s.value} onClick={() => set("style", s.value)} className={pill(form.style === s.value)}>
-                          <span>{s.label}</span>
-                          <span className={pillDesc(form.style === s.value)}>{s.description}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Composition */}
-                  <div>
-                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Composition Focus</label>
-                    <div className="grid grid-cols-1 gap-2">
-                      {COMPOSITION_OPTIONS.map((c) => (
-                        <button key={c.value} onClick={() => set("composition", c.value)} className={pill(form.composition === c.value)}>
-                          <span>{c.label}</span>
-                          <span className={pillDesc(form.composition === c.value)}>{c.description}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Lighting */}
-                  <div>
-                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Lighting</label>
-                    <div className="grid grid-cols-1 gap-2">
-                      {LIGHTING_OPTIONS.map((l) => (
-                        <button key={l.value} onClick={() => set("lighting", l.value)} className={pill(form.lighting === l.value)}>
-                          <span>{l.label}</span>
-                          <span className={pillDesc(form.lighting === l.value)}>{l.description}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Mood */}
-                  <div>
-                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">Mood / Energy</label>
-                    <div className="grid grid-cols-1 gap-2">
-                      {MOOD_OPTIONS.map((m) => (
-                        <button key={m.value} onClick={() => set("mood", m.value)} className={pill(form.mood === m.value)}>
-                          <span>{m.label}</span>
-                          <span className={pillDesc(form.mood === m.value)}>{m.description}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
                 </div>
               )}
             </div>

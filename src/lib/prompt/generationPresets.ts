@@ -1,13 +1,16 @@
-export type GenerationPreset =
-  | "custom"
-  | "nike"
-  | "under_armour"
-  | "adidas"
-  | "jordan"
-  | "new_balance"
-  | "puma"
-  | "gatorade"
-  | "espn";
+export const GENERATION_PRESET_VALUES = [
+  "custom",
+  "nike",
+  "under_armour",
+  "adidas",
+  "jordan",
+  "new_balance",
+  "puma",
+  "gatorade",
+  "espn",
+] as const;
+
+export type GenerationPreset = (typeof GENERATION_PRESET_VALUES)[number];
 
 export type GenerationPresetConfig = {
   value: GenerationPreset;

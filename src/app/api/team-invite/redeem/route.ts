@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
   const { data: profile, error: profileErr } = await supabase
     .from("profiles")
-    .select("role, full_name")
+    .select("role, full_name, team_id, athlete_id")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -48,25 +48,45 @@ export async function POST(request: Request) {
     );
   }
 
+  // 1) Always link the user to the invited team first.
+  // RLS for athlete self-registration depends on profiles.team_id matching.
+  const { error: updateTeamErr } = await supabase
+    .from("profiles")
+    .update({
+      team_id: payload.team_id,
+    })
+    .eq("id", user.id);
+
+  if (updateTeamErr) {
+    return NextResponse.json({ error: updateTeamErr.message }, { status: 500 });
+  }
+
   let athleteIdToLink: string | null = null;
   if (role === "athlete") {
-    const normalizedName = profile?.full_name?.trim() ?? "";
-    if (normalizedName) {
-      const { data: existing, error: existingErr } = await supabase
-        .from("athletes")
-        .select("id")
-        .eq("team_id", payload.team_id)
-        .ilike("full_name", normalizedName)
-        .limit(1)
-        .maybeSingle();
-      if (existingErr) {
-        return NextResponse.json({ error: existingErr.message }, { status: 500 });
-      }
-      athleteIdToLink = existing?.id ?? null;
+    // Keep existing link if already on this team.
+    if (profile?.athlete_id && profile?.team_id === payload.team_id) {
+      athleteIdToLink = profile.athlete_id;
     }
 
-    // If the roster has no matching athlete yet, self-register one so
-    // athlete photo library can work immediately after invite redemption.
+    // Try to match an existing roster row by name.
+    if (!athleteIdToLink) {
+      const normalizedName = profile?.full_name?.trim() ?? "";
+      if (normalizedName) {
+        const { data: existing, error: existingErr } = await supabase
+          .from("athletes")
+          .select("id")
+          .eq("team_id", payload.team_id)
+          .ilike("full_name", normalizedName)
+          .limit(1)
+          .maybeSingle();
+        if (existingErr) {
+          return NextResponse.json({ error: existingErr.message }, { status: 500 });
+        }
+        athleteIdToLink = existing?.id ?? null;
+      }
+    }
+
+    // If no match exists, self-register a roster row.
     if (!athleteIdToLink) {
       const fallbackName = profile?.full_name?.trim() || `Athlete ${user.id.slice(0, 6)}`;
       const { data: inserted, error: insertErr } = await supabase
@@ -84,18 +104,14 @@ export async function POST(request: Request) {
       }
       athleteIdToLink = inserted.id;
     }
-  }
 
-  const { error: updateErr } = await supabase
-    .from("profiles")
-    .update({
-      team_id: payload.team_id,
-      athlete_id: athleteIdToLink,
-    })
-    .eq("id", user.id);
-
-  if (updateErr) {
-    return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    const { error: updateAthleteErr } = await supabase
+      .from("profiles")
+      .update({ athlete_id: athleteIdToLink })
+      .eq("id", user.id);
+    if (updateAthleteErr) {
+      return NextResponse.json({ error: updateAthleteErr.message }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ ok: true, team_id: payload.team_id, athlete_id: athleteIdToLink });

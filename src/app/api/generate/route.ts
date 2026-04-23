@@ -8,7 +8,7 @@ import { REPLICATE_IMAGE_MODEL_ID } from "@/lib/imageGen/replicateImageModel";
 import { getUserRole } from "@/lib/auth/serverAuth";
 import { buildMasterSportsPrompt } from "@/lib/prompt/buildMasterSportsPrompt";
 import type { GenerationPreset } from "@/lib/prompt/generationPresets";
-import { getGenerationPresetConfig } from "@/lib/prompt/generationPresets";
+import { GENERATION_PRESET_VALUES } from "@/lib/prompt/generationPresets";
 
 const RequestSchema = z.object({
   type: z.enum(["gameday", "final-score", "poster", "highlight"]),
@@ -23,7 +23,7 @@ const RequestSchema = z.object({
   broadcastOrStreaming: z.string().optional(),
   hashtag: z.string().optional(),
   style: z.string().optional().default("illustrated"),
-  preset: z.enum(["custom", "hype", "result", "commitment", "prestige"]).optional().default("custom"),
+  preset: z.enum(GENERATION_PRESET_VALUES).optional().default("custom"),
   format: z.enum(["story", "post", "banner"]).optional().default("story"),
   customPrompt: z.string().optional(),
   colorPalette: z.string().optional(),
@@ -194,7 +194,6 @@ export async function POST(req: NextRequest) {
   const sanitizedRefs = sanitizeReferenceImageUrls(rawReferenceImageUrls);
   if (sanitizedRefs instanceof NextResponse) return sanitizedRefs;
 
-  const presetConfig = getGenerationPresetConfig(preset as GenerationPreset);
   const imagePrompt = buildMasterSportsPrompt({
     type,
     sport,

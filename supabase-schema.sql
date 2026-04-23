@@ -271,6 +271,19 @@ create policy "Athletes can self-register in linked team roster"
     )
   );
 
+drop policy if exists "Athletes can read linked team roster" on public.athletes;
+create policy "Athletes can read linked team roster"
+  on public.athletes for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles p
+      where p.id = auth.uid()
+        and p.team_id = athletes.team_id
+    )
+  );
+
 alter table public.schedules enable row level security;
 
 drop policy if exists "Managers can manage schedules for own school" on public.schedules;
