@@ -13,7 +13,18 @@ import type { DesignerUpdate, StoreAsset } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { useEngagement } from "@/lib/hooks/useEngagement";
 
-const SPORTS_FILTER = ["All", "Basketball", "Soccer", "Track & Field", "Swimming", "Baseball", "Volleyball"];
+const SPORTS_FILTER = [
+  "All",
+  "Basketball",
+  "Soccer",
+  "Track & Field",
+  "Swimming",
+  "Baseball",
+  "Volleyball",
+  "Squash",
+  "Tennis",
+  "Football",
+];
 
 /* ─── Intersection-observer hook — triggers fade-up when element scrolls in ── */
 function useInView(threshold = 0.12) {
