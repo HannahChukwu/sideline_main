@@ -882,23 +882,63 @@ export default function CreateAsset() {
                                         No uploaded athlete photos yet.
                                       </p>
                                     ) : (
-                                      <select
-                                        value={selectedUrl}
-                                        onChange={(e) =>
-                                          setSelectedAthletePhotoByAthleteId((prev) => ({
-                                            ...prev,
-                                            [athlete.id]: e.target.value,
-                                          }))
-                                        }
-                                        className="w-full px-2.5 py-2 rounded-lg bg-card border border-border/50 text-xs text-foreground focus:outline-none focus:border-primary/40"
-                                      >
-                                        <option value="">Don&apos;t use library photo</option>
-                                        {library.map((photo) => (
-                                          <option key={photo.id} value={photo.public_url}>
-                                            {photo.original_name || `Photo ${new Date(photo.created_at).toLocaleDateString()}`}
-                                          </option>
-                                        ))}
-                                      </select>
+                                      <div className="space-y-2">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setSelectedAthletePhotoByAthleteId((prev) => ({
+                                              ...prev,
+                                              [athlete.id]: "",
+                                            }))
+                                          }
+                                          className={`w-full text-left px-2.5 py-2 rounded-lg border text-xs transition-all ${
+                                            selectedUrl === ""
+                                              ? "border-primary/40 bg-primary/10 text-primary"
+                                              : "border-border/50 bg-card text-muted-foreground hover:border-border"
+                                          }`}
+                                        >
+                                          Don&apos;t use library photo
+                                        </button>
+
+                                        <div className="grid grid-cols-3 gap-2">
+                                          {library.map((photo) => {
+                                            const active = selectedUrl === photo.public_url;
+                                            return (
+                                              <button
+                                                key={photo.id}
+                                                type="button"
+                                                onClick={() =>
+                                                  setSelectedAthletePhotoByAthleteId((prev) => ({
+                                                    ...prev,
+                                                    [athlete.id]: photo.public_url,
+                                                  }))
+                                                }
+                                                className={`rounded-lg border overflow-hidden transition-all text-left ${
+                                                  active
+                                                    ? "border-primary/50 ring-2 ring-primary/30"
+                                                    : "border-border/50 hover:border-border"
+                                                }`}
+                                                title={photo.original_name || "Athlete photo"}
+                                              >
+                                                <div className="relative aspect-square bg-muted">
+                                                  <Image
+                                                    src={photo.public_url}
+                                                    alt={photo.original_name || "Athlete photo"}
+                                                    fill
+                                                    className="object-cover"
+                                                    unoptimized
+                                                  />
+                                                </div>
+                                                <div className={`px-1.5 py-1 text-[10px] truncate ${
+                                                  active ? "text-primary" : "text-muted-foreground"
+                                                }`}>
+                                                  {photo.original_name || "Photo"}
+                                                </div>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
                                     )}
                                   </div>
                                 );

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Replicate from "replicate";
 import { z } from "zod";
 import { GENERATION_REFERENCES_BUCKET } from "@/lib/supabase/referenceUpload";
+import { ATHLETE_PHOTOS_BUCKET } from "@/lib/supabase/athletePhotos";
 import { consumeGenerateRateLimit } from "@/lib/rate-limit/generateRateLimit";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
 import { REPLICATE_IMAGE_MODEL_ID } from "@/lib/imageGen/replicateImageModel";
@@ -65,7 +66,10 @@ function sanitizeReferenceImageUrls(urls: string[]): string[] | NextResponse {
   } catch {
     return NextResponse.json({ error: "Invalid NEXT_PUBLIC_SUPABASE_URL" }, { status: 500 });
   }
-  const prefix = `/storage/v1/object/public/${GENERATION_REFERENCES_BUCKET}/`;
+  const allowedPrefixes = [
+    `/storage/v1/object/public/${GENERATION_REFERENCES_BUCKET}/`,
+    `/storage/v1/object/public/${ATHLETE_PHOTOS_BUCKET}/`,
+  ];
   const out: string[] = [];
   for (const raw of urls) {
     let u: URL;
@@ -77,9 +81,10 @@ function sanitizeReferenceImageUrls(urls: string[]): string[] | NextResponse {
     if (u.protocol !== "https:") {
       return NextResponse.json({ error: "Reference images must use HTTPS URLs" }, { status: 400 });
     }
-    if (u.hostname !== allowedHost || !u.pathname.startsWith(prefix)) {
+    const fromAllowedBucket = allowedPrefixes.some((p) => u.pathname.startsWith(p));
+    if (u.hostname !== allowedHost || !fromAllowedBucket) {
       return NextResponse.json(
-        { error: "Reference image URLs must come from this app’s Supabase reference storage" },
+        { error: "Reference image URLs must come from this app’s Supabase storage buckets" },
         { status: 400 }
       );
     }
