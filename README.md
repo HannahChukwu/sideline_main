@@ -184,6 +184,7 @@ In Supabase SQL Editor:
 
 1. Run `supabase-schema.sql`
 2. Run `supabase-seed-school.sql` after replacing `YOUR_MANAGER_USER_UID`
+3. If your database already existed before `assets.schedule_id` was added, run `supabase-migration-assets-schedule-id.sql` to add the optional FK + index safely.
 
 Detailed step-by-step instructions live in `docs/SUPABASE_SETUP.md`.
 
@@ -227,6 +228,13 @@ After deploy, smoke-test sign-in, protected routes, and `/api/generate` (Replica
 - `npm run test:watch` - run tests in watch mode
 - `npm run test:coverage` - run tests with coverage
 
+## Testing and Coverage
+
+- Tests run with **Vitest** and currently focus on core app utilities and route logic.
+- Use `npm run test` for a quick validation pass during development.
+- Use `npm run test:coverage` before opening a PR when behavior changes, so you can review impact in the local `coverage/` output.
+- Coverage should be treated as a quality signal, not the only release gate; prioritize meaningful assertions around auth, role access, generation flow, and schedule/team data handling.
+
 ## Project Map
 
 - `src/app` - App Router pages and API route handlers
@@ -234,6 +242,7 @@ After deploy, smoke-test sign-in, protected routes, and `/api/generate` (Replica
 - `src/lib` - Supabase helpers, auth helpers (`auth/loginLockout`), prompt builders, rate limiting (`rate-limit/`), schedule parsing (`schedule/**`, including **CSV** and **Excel** via `parseExcel.ts` + `xlsx`), **team invite signing** (`team-invite/token.ts`), **Replicate image model id** shared by API + Generator UI (`imageGen/replicateImageModel.ts`), editor utilities, store
 - `src/proxy.ts` - session refresh + route access control
 - `supabase-schema.sql` - schema, RLS, triggers, storage bucket setup
+- `supabase-migration-assets-schedule-id.sql` - idempotent migration adding optional `assets.schedule_id` -> `schedules.id` linkage and index
 - `supabase-seed-school.sql` - seed records for school/team/athlete schedule flows
 - `docs/SUPABASE_SETUP.md` - guided Supabase setup
 - `ARCHITECTURE.md` - deeper architecture and system notes
